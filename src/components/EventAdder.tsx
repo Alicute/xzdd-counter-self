@@ -290,22 +290,60 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
               
               {/* 番数预览 */}
               <div className="flex items-end">
-                <div className="bg-gray-50 rounded-lg p-3 w-full">
-                  <div className="text-sm text-gray-600">总番数预览</div>
-                  <div className="text-lg font-bold text-blue-600">
+                <div className="bg-gray-50 rounded-lg p-4 w-full">
+                  <div className="text-sm text-gray-600 mb-2">总番数预览</div>
+                  <div className="text-lg font-bold text-blue-600 mb-2">
                     {calculateTotalFan(selectedFanTypes, gangCount)}番
                     {settings.maxFan > 0 && calculateTotalFan(selectedFanTypes, gangCount) > settings.maxFan && 
                       ` → ${settings.maxFan}番（封顶）`
                     }
                   </div>
-                  <div className="text-sm text-gray-500">
-                    得分：{calculateScoreFromFan(
-                      Math.min(
-                        calculateTotalFan(selectedFanTypes, gangCount),
-                        settings.maxFan || calculateTotalFan(selectedFanTypes, gangCount)
-                      )
-                    )}{eventType === 'hu_pai' ? '+1' : ''}分
-                    {eventType === 'hu_pai' && ' × 在场玩家数'}
+                  
+                  {/* 详细计算说明 */}
+                  <div className="text-xs text-gray-600 space-y-1">
+                    {selectedFanTypes.length > 0 && (
+                      <div>
+                        番型: {selectedFanTypes.map(type => `${type}(${FAN_SCORE_MAP[type]}番)`).join(' + ')}
+                        {gangCount > 0 && ` + ${gangCount}杠(${gangCount}番)`}
+                      </div>
+                    )}
+                    {gangCount > 0 && selectedFanTypes.length === 0 && (
+                      <div>杠牌: {gangCount}杠 = {gangCount}番</div>
+                    )}
+                    
+                    <div className="border-t pt-1 mt-2">
+                      <div className="font-medium text-gray-700">
+                        {(() => {
+                          const totalFan = Math.min(
+                            calculateTotalFan(selectedFanTypes, gangCount),
+                            settings.maxFan || calculateTotalFan(selectedFanTypes, gangCount)
+                          );
+                          const baseScore = calculateScoreFromFan(totalFan);
+                          
+                          if (eventType === 'hu_pai') {
+                            return (
+                              <>
+                                <div>基础得分: 2^{totalFan} = {baseScore}分</div>
+                                <div>自摸加分: +1分</div>
+                                <div>单人得分: {baseScore + 1}分</div>
+                                <div className="text-blue-600 font-semibold">
+                                  总得分: {baseScore + 1} × 在场输家数 = ?分
+                                </div>
+                              </>
+                            );
+                          } else {
+                            return (
+                              <>
+                                <div>点炮得分: 2^{totalFan} = {baseScore}分</div>
+                                <div className="text-blue-600 font-semibold">
+                                  总得分: {baseScore}分（点炮者承担）
+                                </div>
+                              </>
+                            );
+                          }
+                        })()}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
