@@ -1,4 +1,4 @@
-import { FanType, WinType, GangType } from '../types/mahjong';
+import { FanType, GangType } from '../types/mahjong';
 import type { GameEvent, Player, GameSettings } from '../types/mahjong';
 
 // 番型番数映射
@@ -12,7 +12,6 @@ export const FAN_SCORE_MAP: Record<FanType, number> = {
   [FanType.GANG_SHANG_HUA]: 2, // 杠上花直接2番，已包含杠
   [FanType.GANG_SHANG_PAO]: 1,
   [FanType.HAI_DI_LAO]: 1,
-  [FanType.GANG_FAN]: 1, // 每杠+1番
 };
 
 // 杠牌类型分数映射（杠牌本身的得分，不是番数）
@@ -28,43 +27,49 @@ export function calculateScoreFromFan(fanCount: number): number {
   return Math.pow(2, fanCount);
 }
 
-// 计算胡牌得分
-export function calculateWinScore(
+// 计算胡牌得分 - 自摸
+export function calculateZiMoScore(
   fanTypes: FanType[],
-  gangCount: number,
-  winType: WinType,
   settings: GameSettings,
-  playerCount: number = 4
+  activePlayers: number // 在场（未胡牌）玩家数量
 ): number {
   // 计算总番数（所有番型叠加）
   let totalFan = fanTypes.reduce((sum, fanType) => {
     return sum + FAN_SCORE_MAP[fanType];
   }, 0);
 
-  // 杠牌加番：每杠+1番（杠上花已包含杠，龙七对已包含杠）
-  if (gangCount > 0) {
-    totalFan += gangCount;
+  // 封顶处理
+  if (settings.maxFan > 0 && totalFan > settings.maxFan) {
+    totalFan = settings.maxFan;
   }
+
+  // 基础得分：2的番数次方
+  let baseScore = calculateScoreFromFan(totalFan);
+
+  // 自摸额外+1分
+  baseScore += 1;
+
+  // 自摸总得分 = 基础得分 × 在场其他玩家数量
+  return baseScore * (activePlayers - 1);
+}
+
+// 计算胡牌得分 - 点炮
+export function calculateDianPaoScore(
+  fanTypes: FanType[],
+  settings: GameSettings
+): number {
+  // 计算总番数（所有番型叠加）
+  let totalFan = fanTypes.reduce((sum, fanType) => {
+    return sum + FAN_SCORE_MAP[fanType];
+  }, 0);
 
   // 封顶处理
   if (settings.maxFan > 0 && totalFan > settings.maxFan) {
     totalFan = settings.maxFan;
   }
 
-  // 使用正确的计分公式：2的番数次方
-  let baseScore = calculateScoreFromFan(totalFan);
-
-  // 自摸额外+1分（在番数计算之外）
-  if (winType === WinType.ZI_MO) {
-    baseScore += 1;
-  }
-
-  // 自摸时分数要乘以人数（每家都要输这么多分）
-  if (winType === WinType.ZI_MO) {
-    return baseScore * (playerCount - 1); // 除了胡牌者本人，其他人都要输
-  }
-
-  return baseScore;
+  // 点炮得分：2的番数次方，不加额外分数
+  return calculateScoreFromFan(totalFan);
 }
 
 // 计算杠牌得分
@@ -76,13 +81,9 @@ export function calculateGangScore(
 
 // 工具函数：计算总番数（不包含封顶处理）
 export function calculateTotalFan(
-  fanTypes: FanType[],
-  gangCount: number = 0
+  fanTypes: FanType[]
 ): number {
-  const fanScore = fanTypes.reduce((sum, fanType) => sum + FAN_SCORE_MAP[fanType], 0);
-
-  // 杠牌加番：每杠+1番（杠上花已包含杠，龙七对已包含杠）
-  return fanScore + gangCount;
+  return fanTypes.reduce((sum, fanType) => sum + FAN_SCORE_MAP[fanType], 0);
 }
 
 // 生成唯一ID
@@ -92,35 +93,55 @@ export function generateUniqueId(): string {
   return `${Date.now()}-${idCounter}`;
 }
 
-// 创建胡牌事件
-export function createWinEvent(
+// 创建自摸事件
+export function createZiMoEvent(
   winnerId: string,
-  loserIds: string[],
+  activePlayers: string[], // 在场（未胡牌）玩家ID列表
   fanTypes: FanType[],
-  gangCount: number,
-  winType: WinType,
-  settings: GameSettings,
-  playerCount: number = 4
+  settings: GameSettings
 ): GameEvent {
-  const score = calculateWinScore(fanTypes, gangCount, winType, settings, playerCount);
-  const totalFan = calculateTotalFan(fanTypes, gangCount);
+  const score = calculateZiMoScore(fanTypes, settings, activePlayers.length);
+  const totalFan = calculateTotalFan(fanTypes);
+  const loserIds = activePlayers.filter(id => id !== winnerId);
 
   // 构建描述
   let description = fanTypes.length > 0 ? fanTypes.join(' ') : '小胡';
-  if (gangCount > 0) {
-    description += ` ${gangCount}杠`;
-  }
-  description += ` ${winType} ${totalFan}番 得分${score}分`;
+  description += ` 自摸 ${totalFan}番 得分${score}分`;
 
   return {
     id: generateUniqueId(),
     timestamp: Date.now(),
-    type: 'win',
+    type: 'hu_pai',
     winnerId,
     loserIds,
     fanTypes,
-    winType,
-    gangCount,
+    fanCount: totalFan,
+    score,
+    description
+  };
+}
+
+// 创建点炮胡牌事件
+export function createDianPaoEvent(
+  winnerId: string,
+  dianPaoPlayerId: string, // 点炮者ID
+  fanTypes: FanType[],
+  settings: GameSettings
+): GameEvent {
+  const score = calculateDianPaoScore(fanTypes, settings);
+  const totalFan = calculateTotalFan(fanTypes);
+
+  // 构建描述
+  let description = fanTypes.length > 0 ? fanTypes.join(' ') : '小胡';
+  description += ` 点炮 ${totalFan}番 得分${score}分`;
+
+  return {
+    id: generateUniqueId(),
+    timestamp: Date.now(),
+    type: 'dian_pao_hu',
+    winnerId,
+    loserIds: [dianPaoPlayerId],
+    fanTypes,
     fanCount: totalFan,
     score,
     description
@@ -164,17 +185,26 @@ export function applyEventToPlayers(
   event: GameEvent,
   players: Player[]
 ): Player[] {
-  if (event.type === 'win') {
+  if (event.type === 'hu_pai') {
+    // 自摸：胡牌者得分，其他在场玩家失分
     return players.map(player => {
       if (player.id === event.winnerId) {
         // 胡牌者获得分数
         return { ...player, score: player.score + event.score };
-      } else if (event.winType === WinType.ZI_MO) {
-        // 自摸：每家都输(总分数 / (人数-1))
-        const scorePerPlayer = event.score / (players.length - 1);
-        return { ...player, score: player.score - scorePerPlayer };
       } else if (event.loserIds?.includes(player.id)) {
-        // 点胡：特定失败者输全部分数
+        // 在场玩家失分：总分数 / 在场玩家数
+        const scorePerPlayer = event.score / (event.loserIds?.length || 1);
+        return { ...player, score: player.score - scorePerPlayer };
+      }
+      return player;
+    });
+  } else if (event.type === 'dian_pao_hu') {
+    // 点炮：胡牌者得分，点炮者失分
+    return players.map(player => {
+      if (player.id === event.winnerId) {
+        return { ...player, score: player.score + event.score };
+      } else if (event.loserIds?.includes(player.id)) {
+        // 点炮者输全部分数
         return { ...player, score: player.score - event.score };
       }
       return player;
@@ -197,17 +227,26 @@ export function reverseApplyEventToPlayers(
   event: GameEvent,
   players: Player[]
 ): Player[] {
-  if (event.type === 'win') {
+  if (event.type === 'hu_pai') {
+    // 反向自摸
     return players.map(player => {
       if (player.id === event.winnerId) {
         // 反向：胡牌者失去分数
         return { ...player, score: player.score - event.score };
-      } else if (event.winType === WinType.ZI_MO) {
-        // 反向自摸：每家都得回分数
-        const scorePerPlayer = event.score / (players.length - 1);
-        return { ...player, score: player.score + scorePerPlayer };
       } else if (event.loserIds?.includes(player.id)) {
-        // 反向点胡：失败者得回分数
+        // 反向：在场玩家得回分数
+        const scorePerPlayer = event.score / (event.loserIds?.length || 1);
+        return { ...player, score: player.score + scorePerPlayer };
+      }
+      return player;
+    });
+  } else if (event.type === 'dian_pao_hu') {
+    // 反向点炮
+    return players.map(player => {
+      if (player.id === event.winnerId) {
+        return { ...player, score: player.score - event.score };
+      } else if (event.loserIds?.includes(player.id)) {
+        // 反向：点炮者得回分数
         return { ...player, score: player.score + event.score };
       }
       return player;

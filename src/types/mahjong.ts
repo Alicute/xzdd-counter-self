@@ -19,15 +19,6 @@ export enum FanType {
   GANG_SHANG_HUA = '杠上花', // 2番
   GANG_SHANG_PAO = '杠上炮', // 1番
   HAI_DI_LAO = '海底捞', // 1番
-
-  // 杠牌加番（每个杠+1番）
-  GANG_FAN = '杠牌加番', // 每杠+1番
-}
-
-// 胡牌方式
-export enum WinType {
-  ZI_MO = '自摸', // +1分
-  DIAN_PAO = '点炮', // 不额外加分
 }
 
 // 杠牌类型
@@ -41,14 +32,12 @@ export enum GangType {
 export interface GameEvent {
   id: string;
   timestamp: number;
-  type: 'win' | 'gang';
+  type: 'dian_pao_hu' | 'hu_pai' | 'gang';
   winnerId: string;
   loserIds?: string[];
   fanTypes?: FanType[]; // 所有番型（可叠加）
-  winType?: WinType;
   gangType?: GangType;
   gangTargetIds?: string[]; // 被杠的玩家ID列表
-  gangCount?: number; // 杠牌数量（用于杠牌加番）
   fanCount: number; // 总番数
   score: number; // 得分
   description: string;

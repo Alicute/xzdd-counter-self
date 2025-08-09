@@ -2,6 +2,50 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 自定义动画 */
+@layer utilities {
+  .animate-in {
+    animation-duration: 150ms;
+    animation-fill-mode: both;
+  }
+  
+  .fade-in {
+    animation-name: fadeIn;
+  }
+  
+  .zoom-in-95 {
+    animation-name: zoomIn;
+  }
+  
+  .duration-200 {
+    animation-duration: 200ms;
+  }
+  
+  .duration-300 {
+    animation-duration: 300ms;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes zoomIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
