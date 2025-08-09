@@ -14,6 +14,7 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
   const [winnerId, setWinnerId] = useState('');
   const [loserIds, setLoserIds] = useState<string[]>([]);
   const [selectedFanTypes, setSelectedFanTypes] = useState<FanType[]>([]);
+  const [gangCount, setGangCount] = useState<number>(0);
   const [gangType, setGangType] = useState<GangType>(GangType.AN_GANG);
   const [gangTargetIds, setGangTargetIds] = useState<string[]>([]);
 
@@ -25,11 +26,11 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
       // 自摸：需要选择在场玩家（输家）
       if (loserIds.length === 0) return;
       const activePlayers = [winnerId, ...loserIds]; // 在场玩家包括胡牌者
-      event = createZiMoEvent(winnerId, activePlayers, selectedFanTypes, settings);
+      event = createZiMoEvent(winnerId, activePlayers, selectedFanTypes, gangCount, settings);
     } else if (eventType === 'dian_pao_hu') {
       // 点炮：只需要一个点炮者
       if (loserIds.length !== 1) return;
-      event = createDianPaoEvent(winnerId, loserIds[0], selectedFanTypes, settings);
+      event = createDianPaoEvent(winnerId, loserIds[0], selectedFanTypes, gangCount, settings);
     } else {
       // 杠牌
       if (gangTargetIds.length === 0) return;
@@ -42,6 +43,7 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
     setWinnerId('');
     setLoserIds([]);
     setSelectedFanTypes([]);
+    setGangCount(0);
     setGangTargetIds([]);
   };
 
@@ -267,23 +269,45 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
               </div>
             </div>
 
-            {/* 番数预览 */}
-            <div className="bg-gray-50 rounded-lg p-4">
-              <div className="text-sm text-gray-600 mb-2">总番数预览</div>
-              <div className="text-lg font-bold text-blue-600">
-                {calculateTotalFan(selectedFanTypes)}番
-                {settings.maxFan > 0 && calculateTotalFan(selectedFanTypes) > settings.maxFan && 
-                  ` → ${settings.maxFan}番（封顶）`
-                }
+            {/* 杠牌加番 */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  杠牌数量（每杠+1番）
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="4"
+                  value={gangCount}
+                  onChange={(e) => {
+                    const count = parseInt(e.target.value) || 0;
+                    setGangCount(count);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
               </div>
-              <div className="text-sm text-gray-500">
-                得分：{calculateScoreFromFan(
-                  Math.min(
-                    calculateTotalFan(selectedFanTypes),
-                    settings.maxFan || calculateTotalFan(selectedFanTypes)
-                  )
-                )}{eventType === 'hu_pai' ? '+1' : ''}分
-                {eventType === 'hu_pai' && ' × 在场玩家数'}
+              
+              {/* 番数预览 */}
+              <div className="flex items-end">
+                <div className="bg-gray-50 rounded-lg p-3 w-full">
+                  <div className="text-sm text-gray-600">总番数预览</div>
+                  <div className="text-lg font-bold text-blue-600">
+                    {calculateTotalFan(selectedFanTypes, gangCount)}番
+                    {settings.maxFan > 0 && calculateTotalFan(selectedFanTypes, gangCount) > settings.maxFan && 
+                      ` → ${settings.maxFan}番（封顶）`
+                    }
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    得分：{calculateScoreFromFan(
+                      Math.min(
+                        calculateTotalFan(selectedFanTypes, gangCount),
+                        settings.maxFan || calculateTotalFan(selectedFanTypes, gangCount)
+                      )
+                    )}{eventType === 'hu_pai' ? '+1' : ''}分
+                    {eventType === 'hu_pai' && ' × 在场玩家数'}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -315,6 +339,7 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
               setWinnerId('');
               setLoserIds([]);
               setSelectedFanTypes([]);
+              setGangCount(0);
               setGangTargetIds([]);
             }}
             className="px-6 py-3 bg-gray-500 text-white font-medium rounded-lg hover:bg-gray-600 transition-colors"

@@ -30,6 +30,7 @@ export function calculateScoreFromFan(fanCount: number): number {
 // 计算胡牌得分 - 自摸
 export function calculateZiMoScore(
   fanTypes: FanType[],
+  gangCount: number = 0,
   settings: GameSettings,
   activePlayers: number // 在场（未胡牌）玩家数量
 ): number {
@@ -37,6 +38,9 @@ export function calculateZiMoScore(
   let totalFan = fanTypes.reduce((sum, fanType) => {
     return sum + FAN_SCORE_MAP[fanType];
   }, 0);
+
+  // 杠牌加番：每杠+1番
+  totalFan += gangCount;
 
   // 封顶处理
   if (settings.maxFan > 0 && totalFan > settings.maxFan) {
@@ -56,12 +60,16 @@ export function calculateZiMoScore(
 // 计算胡牌得分 - 点炮
 export function calculateDianPaoScore(
   fanTypes: FanType[],
+  gangCount: number = 0,
   settings: GameSettings
 ): number {
   // 计算总番数（所有番型叠加）
   let totalFan = fanTypes.reduce((sum, fanType) => {
     return sum + FAN_SCORE_MAP[fanType];
   }, 0);
+
+  // 杠牌加番：每杠+1番
+  totalFan += gangCount;
 
   // 封顶处理
   if (settings.maxFan > 0 && totalFan > settings.maxFan) {
@@ -81,9 +89,11 @@ export function calculateGangScore(
 
 // 工具函数：计算总番数（不包含封顶处理）
 export function calculateTotalFan(
-  fanTypes: FanType[]
+  fanTypes: FanType[],
+  gangCount: number = 0
 ): number {
-  return fanTypes.reduce((sum, fanType) => sum + FAN_SCORE_MAP[fanType], 0);
+  const fanScore = fanTypes.reduce((sum, fanType) => sum + FAN_SCORE_MAP[fanType], 0);
+  return fanScore + gangCount;
 }
 
 // 生成唯一ID
@@ -98,14 +108,18 @@ export function createZiMoEvent(
   winnerId: string,
   activePlayers: string[], // 在场（未胡牌）玩家ID列表
   fanTypes: FanType[],
+  gangCount: number = 0,
   settings: GameSettings
 ): GameEvent {
-  const score = calculateZiMoScore(fanTypes, settings, activePlayers.length);
-  const totalFan = calculateTotalFan(fanTypes);
+  const score = calculateZiMoScore(fanTypes, gangCount, settings, activePlayers.length);
+  const totalFan = calculateTotalFan(fanTypes, gangCount);
   const loserIds = activePlayers.filter(id => id !== winnerId);
 
   // 构建描述
   let description = fanTypes.length > 0 ? fanTypes.join(' ') : '小胡';
+  if (gangCount > 0) {
+    description += ` ${gangCount}杠`;
+  }
   description += ` 自摸 ${totalFan}番 得分${score}分`;
 
   return {
@@ -115,6 +129,7 @@ export function createZiMoEvent(
     winnerId,
     loserIds,
     fanTypes,
+    gangCount,
     fanCount: totalFan,
     score,
     description
@@ -126,13 +141,17 @@ export function createDianPaoEvent(
   winnerId: string,
   dianPaoPlayerId: string, // 点炮者ID
   fanTypes: FanType[],
+  gangCount: number = 0,
   settings: GameSettings
 ): GameEvent {
-  const score = calculateDianPaoScore(fanTypes, settings);
-  const totalFan = calculateTotalFan(fanTypes);
+  const score = calculateDianPaoScore(fanTypes, gangCount, settings);
+  const totalFan = calculateTotalFan(fanTypes, gangCount);
 
   // 构建描述
   let description = fanTypes.length > 0 ? fanTypes.join(' ') : '小胡';
+  if (gangCount > 0) {
+    description += ` ${gangCount}杠`;
+  }
   description += ` 点炮 ${totalFan}番 得分${score}分`;
 
   return {
@@ -142,6 +161,7 @@ export function createDianPaoEvent(
     winnerId,
     loserIds: [dianPaoPlayerId],
     fanTypes,
+    gangCount,
     fanCount: totalFan,
     score,
     description

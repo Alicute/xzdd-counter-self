@@ -38,6 +38,7 @@ export interface GameEvent {
   fanTypes?: FanType[]; // 所有番型（可叠加）
   gangType?: GangType;
   gangTargetIds?: string[]; // 被杠的玩家ID列表
+  gangCount?: number; // 杠牌数量（用于加番）
   fanCount: number; // 总番数
   score: number; // 得分
   description: string;
