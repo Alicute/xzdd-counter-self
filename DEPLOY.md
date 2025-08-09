@@ -27,6 +27,9 @@
 - **SERVER_PATH**: 服务器上的目标部署路径
   - 示例: `/var/www/html/mahjong-counter`
 
+- **DOCKER_COMPOSE_PATH**: docker-compose.yml所在的目录路径
+  - 示例: `/home/user/docker-services` 或 `/opt/caddy-server`
+
 ### 部署流程说明：
 
 1. 当代码推送到 `main` 分支时，GitHub Actions会自动触发
@@ -34,7 +37,7 @@
 3. 安装项目依赖
 4. 执行 `pnpm run build` 构建项目
 5. 将构建后的 `dist` 目录内容上传到服务器指定路径
-6. 可选：执行服务器重启或缓存清理命令
+6. 进入docker-compose目录并重启caddy服务
 
 ### 安全建议：
 
