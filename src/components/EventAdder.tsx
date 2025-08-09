@@ -275,17 +275,30 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   杠牌数量（每杠+1番）
                 </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="4"
-                  value={gangCount}
-                  onChange={(e) => {
-                    const count = parseInt(e.target.value) || 0;
-                    setGangCount(count);
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <div className="flex items-center border border-gray-300 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setGangCount(Math.max(0, gangCount - 1))}
+                    disabled={gangCount <= 0}
+                    className="px-3 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-50 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
+                  >
+                    −
+                  </button>
+                  <div className="flex-1 px-4 py-2 text-center font-medium text-gray-900 bg-white">
+                    {gangCount}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setGangCount(Math.min(4, gangCount + 1))}
+                    disabled={gangCount >= 4}
+                    className="px-3 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-50 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
+                  >
+                    +
+                  </button>
+                </div>
+                <div className="mt-1 text-xs text-gray-500">
+                  最多4杠，每杠+1番
+                </div>
               </div>
               
               {/* 番数预览 */}
@@ -321,22 +334,32 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
                           const baseScore = calculateScoreFromFan(totalFan);
                           
                           if (eventType === 'hu_pai') {
+                            const loserCount = loserIds.length;
+                            const totalScore = loserCount > 0 ? (baseScore + 1) * loserCount : 0;
                             return (
                               <>
                                 <div>基础得分: 2^{totalFan} = {baseScore}分</div>
                                 <div>自摸加分: +1分</div>
                                 <div>单人得分: {baseScore + 1}分</div>
                                 <div className="text-blue-600 font-semibold">
-                                  总得分: {baseScore + 1} × 在场输家数 = ?分
+                                  总得分: {baseScore + 1} × {loserCount}人 = {totalScore}分
                                 </div>
+                                {loserCount === 0 && (
+                                  <div className="text-amber-600 text-xs mt-1">
+                                    请选择在场输家玩家
+                                  </div>
+                                )}
                               </>
                             );
-                          } else {
+                          } else if (eventType === 'dian_pao_hu') {
                             return (
                               <>
                                 <div>点炮得分: 2^{totalFan} = {baseScore}分</div>
                                 <div className="text-blue-600 font-semibold">
-                                  总得分: {baseScore}分（点炮者承担）
+                                  总得分: {baseScore}分
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  点炮者承担全部分数
                                 </div>
                               </>
                             );
