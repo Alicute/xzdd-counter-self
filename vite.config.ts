@@ -11,6 +11,6 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: false
+    sourcemap: 'hidden' // 生成sourcemap但不暴露给用户，用于错误追踪
   }
 })

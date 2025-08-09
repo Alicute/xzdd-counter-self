@@ -69,8 +69,7 @@ export function calculateWinScore(
 
 // 计算杠牌得分
 export function calculateGangScore(
-  gangType: GangType,
-  _settings: GameSettings
+  gangType: GangType
 ): number {
   return GANG_SCORE_MAP[gangType] || 0;
 }
@@ -135,7 +134,7 @@ export function createGangEvent(
   settings: GameSettings,
   gangTargetIds: string[] = []
 ): GameEvent {
-  const baseScore = calculateGangScore(gangType, settings || { maxFan: 0, callTransfer: false });
+  const baseScore = calculateGangScore(gangType);
   const totalScore = baseScore * gangTargetIds.length; // 总得分 = 单人分数 × 人数
 
   let description = '';
@@ -163,8 +162,7 @@ export function createGangEvent(
 // 应用事件到玩家分数
 export function applyEventToPlayers(
   event: GameEvent,
-  players: Player[],
-  settings?: GameSettings
+  players: Player[]
 ): Player[] {
   if (event.type === 'win') {
     return players.map(player => {
@@ -186,7 +184,7 @@ export function applyEventToPlayers(
       if (player.id === event.winnerId) {
         return { ...player, score: player.score + event.score };
       } else {
-        return applyGangEvent(event, player, players, settings);
+        return applyGangEvent(event, player);
       }
     });
   }
@@ -197,8 +195,7 @@ export function applyEventToPlayers(
 // 反向应用事件（用于优化删除操作）
 export function reverseApplyEventToPlayers(
   event: GameEvent,
-  players: Player[],
-  settings?: GameSettings
+  players: Player[]
 ): Player[] {
   if (event.type === 'win') {
     return players.map(player => {
@@ -220,7 +217,7 @@ export function reverseApplyEventToPlayers(
       if (player.id === event.winnerId) {
         return { ...player, score: player.score - event.score };
       } else {
-        return reverseApplyGangEvent(event, player, players, settings);
+        return reverseApplyGangEvent(event, player);
       }
     });
   }
@@ -231,13 +228,11 @@ export function reverseApplyEventToPlayers(
 // 处理杠牌事件的分数计算
 function applyGangEvent(
   event: GameEvent,
-  player: Player,
-  allPlayers: Player[],
-  settings?: GameSettings
+  player: Player
 ): Player {
-  const { gangType, winnerId, gangTargetIds = [] } = event;
+  const { gangType, gangTargetIds = [] } = event;
   if (!gangType) return player;
-  const baseScore = calculateGangScore(gangType, settings || { maxFan: 0, callTransfer: false });
+  const baseScore = calculateGangScore(gangType);
 
   // 检查当前玩家是否在被杠列表中
   if (gangTargetIds.includes(player.id)) {
@@ -250,13 +245,11 @@ function applyGangEvent(
 // 反向处理杠牌事件的分数计算
 function reverseApplyGangEvent(
   event: GameEvent,
-  player: Player,
-  allPlayers: Player[],
-  settings?: GameSettings
+  player: Player
 ): Player {
-  const { gangType, winnerId, gangTargetIds = [] } = event;
+  const { gangType, gangTargetIds = [] } = event;
   if (!gangType) return player;
-  const baseScore = calculateGangScore(gangType, settings || { maxFan: 0, callTransfer: false });
+  const baseScore = calculateGangScore(gangType);
 
   // 检查当前玩家是否在被杠列表中，反向返还分数
   if (gangTargetIds.includes(player.id)) {
