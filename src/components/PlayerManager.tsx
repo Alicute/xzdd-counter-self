@@ -9,18 +9,42 @@ interface PlayerManagerProps {
 
 function PlayerManager({ players, onPlayersChange }: PlayerManagerProps) {
   const [newPlayerName, setNewPlayerName] = useState('');
+  const [error, setError] = useState('');
 
   const addPlayer = useCallback(() => {
-    if (newPlayerName.trim()) {
-      const newPlayer: Player = {
-        id: `player-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        name: newPlayerName.trim(),
-        score: 0,
-      };
-      onPlayersChange([...players, newPlayer]);
-      setNewPlayerName('');
+    const trimmedName = newPlayerName.trim();
+    
+    // 验证名字不能为空
+    if (!trimmedName) {
+      setError('玩家名字不能为空');
+      return;
     }
+
+    // 验证名字不能重复
+    if (players.some(player => player.name === trimmedName)) {
+      setError('玩家名字不能重复');
+      return;
+    }
+
+    // 清除错误信息
+    setError('');
+    
+    const newPlayer: Player = {
+      id: `player-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: trimmedName,
+      score: 0,
+    };
+    onPlayersChange([...players, newPlayer]);
+    setNewPlayerName('');
   }, [newPlayerName, players, onPlayersChange]);
+
+  // 当输入改变时清除错误信息
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewPlayerName(e.target.value);
+    if (error) {
+      setError('');
+    }
+  };
 
   const removePlayer = useCallback((playerId: string) => {
     onPlayersChange(players.filter(p => p.id !== playerId));
@@ -40,23 +64,34 @@ function PlayerManager({ players, onPlayersChange }: PlayerManagerProps) {
       </div>
 
       {/* 添加玩家 */}
-      <div className="flex gap-3 mb-6">
-        <input
-          type="text"
-          value={newPlayerName}
-          onChange={(e) => setNewPlayerName(e.target.value)}
-          placeholder="输入玩家姓名"
-          className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/90 placeholder-gray-400"
-          onKeyPress={(e) => e.key === 'Enter' && addPlayer()}
-        />
-        <button
-          onClick={addPlayer}
-          disabled={!newPlayerName.trim()}
-          className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium transition-all duration-300 transform hover:scale-105 shadow-lg shadow-blue-500/25"
-        >
-          <PlusIcon className="w-4 h-4" />
-          添加
-        </button>
+      <div className="mb-6">
+        <div className="flex gap-3 mb-2">
+          <input
+            type="text"
+            value={newPlayerName}
+            onChange={handleNameChange}
+            placeholder="输入玩家姓名"
+            className={`flex-1 px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:border-transparent bg-white/90 placeholder-gray-400 ${
+              error 
+                ? 'border-red-300 focus:ring-red-500' 
+                : 'border-gray-200 focus:ring-blue-500'
+            }`}
+            onKeyPress={(e) => e.key === 'Enter' && addPlayer()}
+          />
+          <button
+            onClick={addPlayer}
+            disabled={!newPlayerName.trim()}
+            className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-medium transition-all duration-200 transform hover:translate-y-[-1px] shadow-lg shadow-blue-500/15"
+          >
+            <PlusIcon className="w-4 h-4" />
+            添加
+          </button>
+        </div>
+        {error && (
+          <div className="text-red-600 text-sm px-1">
+            {error}
+          </div>
+        )}
       </div>
 
       {/* 玩家列表 */}
