@@ -200,7 +200,7 @@ export function createGangEvent(
   };
 }
 
-// 应用事件到玩家分数
+// 应用事件到玩家分数（仅影响当前局）
 export function applyEventToPlayers(
   event: GameEvent,
   players: Player[]
@@ -210,11 +210,11 @@ export function applyEventToPlayers(
     return players.map(player => {
       if (player.id === event.winnerId) {
         // 胡牌者获得分数
-        return { ...player, score: player.score + event.score };
+        return { ...player, currentRoundScore: player.currentRoundScore + event.score };
       } else if (event.loserIds?.includes(player.id)) {
         // 在场玩家失分：总分数 / 在场玩家数
         const scorePerPlayer = event.score / (event.loserIds?.length || 1);
-        return { ...player, score: player.score - scorePerPlayer };
+        return { ...player, currentRoundScore: player.currentRoundScore - scorePerPlayer };
       }
       return player;
     });
@@ -222,17 +222,17 @@ export function applyEventToPlayers(
     // 点炮：胡牌者得分，点炮者失分
     return players.map(player => {
       if (player.id === event.winnerId) {
-        return { ...player, score: player.score + event.score };
+        return { ...player, currentRoundScore: player.currentRoundScore + event.score };
       } else if (event.loserIds?.includes(player.id)) {
         // 点炮者输全部分数
-        return { ...player, score: player.score - event.score };
+        return { ...player, currentRoundScore: player.currentRoundScore - event.score };
       }
       return player;
     });
   } else if (event.type === 'gang') {
     return players.map(player => {
       if (player.id === event.winnerId) {
-        return { ...player, score: player.score + event.score };
+        return { ...player, currentRoundScore: player.currentRoundScore + event.score };
       } else {
         return applyGangEvent(event, player);
       }
@@ -252,11 +252,11 @@ export function reverseApplyEventToPlayers(
     return players.map(player => {
       if (player.id === event.winnerId) {
         // 反向：胡牌者失去分数
-        return { ...player, score: player.score - event.score };
+        return { ...player, currentRoundScore: player.currentRoundScore - event.score };
       } else if (event.loserIds?.includes(player.id)) {
         // 反向：在场玩家得回分数
         const scorePerPlayer = event.score / (event.loserIds?.length || 1);
-        return { ...player, score: player.score + scorePerPlayer };
+        return { ...player, currentRoundScore: player.currentRoundScore + scorePerPlayer };
       }
       return player;
     });
@@ -264,17 +264,17 @@ export function reverseApplyEventToPlayers(
     // 反向点炮
     return players.map(player => {
       if (player.id === event.winnerId) {
-        return { ...player, score: player.score - event.score };
+        return { ...player, currentRoundScore: player.currentRoundScore - event.score };
       } else if (event.loserIds?.includes(player.id)) {
         // 反向：点炮者得回分数
-        return { ...player, score: player.score + event.score };
+        return { ...player, currentRoundScore: player.currentRoundScore + event.score };
       }
       return player;
     });
   } else if (event.type === 'gang') {
     return players.map(player => {
       if (player.id === event.winnerId) {
-        return { ...player, score: player.score - event.score };
+        return { ...player, currentRoundScore: player.currentRoundScore - event.score };
       } else {
         return reverseApplyGangEvent(event, player);
       }
@@ -295,7 +295,7 @@ function applyGangEvent(
 
   // 检查当前玩家是否在被杠列表中
   if (gangTargetIds.includes(player.id)) {
-    return { ...player, score: player.score - baseScore };
+    return { ...player, currentRoundScore: player.currentRoundScore - baseScore };
   }
 
   return player;
@@ -312,8 +312,17 @@ function reverseApplyGangEvent(
 
   // 检查当前玩家是否在被杠列表中，反向返还分数
   if (gangTargetIds.includes(player.id)) {
-    return { ...player, score: player.score + baseScore };
+    return { ...player, currentRoundScore: player.currentRoundScore + baseScore };
   }
 
   return player;
+}
+
+// 结算当前局，将当前局分数累加到总分
+export function settleCurrentRound(players: Player[]): Player[] {
+  return players.map(player => ({
+    ...player,
+    totalScore: player.totalScore + player.currentRoundScore,
+    currentRoundScore: 0, // 重置当前局分数
+  }));
 } 

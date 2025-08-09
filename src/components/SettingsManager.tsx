@@ -14,16 +14,8 @@ export default function SettingsManager({ settings, onSettingsChange }: Settings
   };
 
   return (
-    <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-white/20">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg flex items-center justify-center">
-          <span className="text-white text-sm">⚙️</span>
-        </div>
-        <h2 className="text-xl font-bold text-gray-800">游戏设置</h2>
-      </div>
-
-      <div className="space-y-6">
-        {/* 封顶番数 */}
+    <div className="space-y-6">
+      {/* 封顶番数 */}
         <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
           <label className="block text-sm font-semibold text-gray-700 mb-3">
             🎯 几番封顶
@@ -91,7 +83,6 @@ export default function SettingsManager({ settings, onSettingsChange }: Settings
             </div>
           </div>
         </div>
-      </div>
     </div>
   );
 }

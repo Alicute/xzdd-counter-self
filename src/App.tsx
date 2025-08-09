@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { GameState, GameEvent } from './types/mahjong';
-import { applyEventToPlayers, reverseApplyEventToPlayers } from './utils/mahjongCalculator';
+import { applyEventToPlayers, reverseApplyEventToPlayers, settleCurrentRound } from './utils/mahjongCalculator';
 import { loadGameState, saveGameState, saveGameStateSync, getDefaultGameState, clearGameState } from './utils/storage';
 import PlayerManager from './components/PlayerManager';
 import SettingsManager from './components/SettingsManager';
 import EventAdder from './components/EventAdder';
 import EventHistory from './components/EventHistory';
 import ScoreBoard from './components/ScoreBoard';
+import CurrentRoundBoard from './components/CurrentRoundBoard';
 import ConfirmDialog from './components/ConfirmDialog';
 import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
 
@@ -33,7 +34,7 @@ function App() {
   });
 
   // 检查游戏是否已开始（有事件记录）
-  const isGameStarted = gameState.events.length > 0;
+  const isGameStarted = (gameState.currentRoundEvents?.length || 0) > 0;
 
   // 显示确认对话框的通用函数
   const showConfirmDialog = (options: Omit<ConfirmDialogState, 'isOpen'>) => {
@@ -101,27 +102,64 @@ function App() {
       return {
         ...prev,
         players: updatedPlayers,
-        events: [...prev.events, event]
+        currentRoundEvents: [...(prev.currentRoundEvents || []), event]
       };
     });
   }, []);
 
   const removeEvent = useCallback((eventId: string) => {
     setGameState(prev => {
-      const eventToRemove = prev.events.find(e => e.id === eventId);
+      const eventToRemove = (prev.currentRoundEvents || []).find(e => e.id === eventId);
       if (!eventToRemove) return prev;
 
       // 使用增量计算：直接反向应用要删除的事件
       const updatedPlayers = reverseApplyEventToPlayers(eventToRemove, prev.players);
-      const remainingEvents = prev.events.filter(e => e.id !== eventId);
+      const remainingEvents = (prev.currentRoundEvents || []).filter(e => e.id !== eventId);
 
       return {
         ...prev,
         players: updatedPlayers,
-        events: remainingEvents
+        currentRoundEvents: remainingEvents
       };
     });
   }, []);
+
+  const handleNextRound = useCallback(() => {
+    setGameState(prev => {
+      // 如果当前局没有事件，直接开始下一局
+      if ((prev.currentRoundEvents || []).length === 0) {
+        return {
+          ...prev,
+          currentRound: prev.currentRound + 1
+        };
+      }
+
+      // 结算当前局分数到总分
+      const settledPlayers = settleCurrentRound(prev.players);
+      
+      // 保存当前局历史记录
+      const roundHistory = {
+        roundNumber: prev.currentRound,
+        events: [...(prev.currentRoundEvents || [])],
+        finalScores: prev.players.map(p => ({ playerId: p.id, score: p.currentRoundScore })),
+        timestamp: Date.now()
+      };
+
+      return {
+        ...prev,
+        players: settledPlayers,
+        currentRoundEvents: [], // 清空当前局事件
+        roundHistory: [...prev.roundHistory, roundHistory],
+        currentRound: prev.currentRound + 1
+      };
+    });
+  }, []);
+
+  // 检查当前局是否有分数变化
+  const hasCurrentRoundActivity = gameState.players.some(p => p.currentRoundScore !== 0);
+  
+  // 计算当前局分数平衡
+  const currentRoundBalance = gameState.players.reduce((sum, player) => sum + player.currentRoundScore, 0);
 
   const resetGame = useCallback(() => {
     console.log('🔄 重置游戏状态...');
@@ -180,6 +218,51 @@ function App() {
             <ScoreBoard players={gameState.players} />
           </div>
 
+          {/* 当前局计分板 */}
+          <CurrentRoundBoard 
+            players={gameState.players} 
+            currentRound={gameState.currentRound} 
+          />
+
+          {/* 下一局按钮 */}
+          <div className="flex justify-center">
+            <button
+              onClick={() => {
+                const buttonText = gameState.currentRound === 1 && !hasCurrentRoundActivity ? '开局' : '下一局';
+                
+                // 检查当前局分数是否平衡
+                if (hasCurrentRoundActivity && currentRoundBalance !== 0) {
+                  // 分数不平衡的警告提示
+                  showConfirmDialog({
+                    title: '⚠️ 分数不平衡警告',
+                    message: `当前局分数不平衡（总计${currentRoundBalance > 0 ? '+' : ''}${currentRoundBalance}分）！\n\n这可能表示计分有误。继续${buttonText}将把当前不平衡的分数累加到总分中。\n\n您确定要继续吗？`,
+                    type: 'warning',
+                    confirmText: `确认${buttonText}`,
+                    onConfirm: handleNextRound
+                  });
+                } else {
+                  // 正常的确认提示
+                  const message = hasCurrentRoundActivity 
+                    ? `确认结算第${gameState.currentRound}局并开始下一局吗？当前局的分数将累加到总分中。`
+                    : `确认开始第${gameState.currentRound}局吗？`;
+                  
+                  showConfirmDialog({
+                    title: `${buttonText}确认`,
+                    message,
+                    type: 'info',
+                    confirmText: buttonText,
+                    onConfirm: handleNextRound
+                  });
+                }
+              }}
+              disabled={gameState.players.length < 2}
+              className="px-8 py-3 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl hover:from-emerald-600 hover:to-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 font-semibold shadow-lg shadow-emerald-500/25 transform hover:scale-105"
+            >
+              🎯 {gameState.currentRound === 1 && !hasCurrentRoundActivity ? '开局' : '下一局'}
+              <span className="ml-2 text-sm opacity-90">第{gameState.currentRound + (hasCurrentRoundActivity ? 1 : 0)}局</span>
+            </button>
+          </div>
+
           {/* 事件添加 - 核心功能 */}
           <EventAdder
             players={gameState.players}
@@ -189,13 +272,14 @@ function App() {
 
           {/* 历史记录 - 可折叠 */}
           <EventHistory
-            events={gameState.events}
+            events={gameState.currentRoundEvents || []}
             players={gameState.players}
             onEventRemove={removeEvent}
+            currentRound={gameState.currentRound}
           />
         </div>
 
-        {/* 侧边抽屉 */}
+        {/* 抽屉式全屏弹窗 */}
         {isDrawerOpen && (
           <>
             {/* 遮罩层 */}
@@ -204,25 +288,26 @@ function App() {
               onClick={() => setIsDrawerOpen(false)}
             />
             
-            {/* 抽屉内容 */}
-            <div className="fixed inset-y-0 right-0 w-80 max-w-[80vw] bg-white shadow-2xl z-50 transform transition-transform duration-300 flex flex-col">
-              {/* 抽屉头部 */}
-              <div className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-6 py-4 flex-shrink-0">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-bold">游戏设置</h2>
-                  <button
-                    onClick={() => setIsDrawerOpen(false)}
-                    className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors"
-                  >
-                    <XMarkIcon className="w-5 h-5" />
-                  </button>
+            {/* 全屏抽屉内容 */}
+            <div className="fixed inset-0 z-50 transform transition-transform duration-300 ease-in-out">
+              <div className="w-full h-full bg-white flex flex-col overflow-hidden">
+                {/* 抽屉头部 */}
+                <div className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-6 py-4 flex-shrink-0">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-bold">游戏设置</h2>
+                    <button
+                      onClick={() => setIsDrawerOpen(false)}
+                      className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition-colors"
+                    >
+                      <XMarkIcon className="w-6 h-6" />
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              {/* 抽屉内容 - 可滚动区域 */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                {/* 玩家管理 */}
-                <div>
+                {/* 抽屉内容 - 可滚动区域 */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                  {/* 玩家管理 */}
+                  <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                     👥 玩家管理
                     {isGameStarted && (
@@ -298,7 +383,7 @@ function App() {
                     onClick={() => {
                       const title = isGameStarted ? '重置游戏确认' : '重置游戏';
                       const message = isGameStarted 
-                        ? `您确定要重置游戏吗？这将清除所有分数记录和 ${gameState.events.length} 条事件历史，此操作无法撤销！`
+                        ? `您确定要重置游戏吗？这将清除所有分数记录和 ${(gameState.currentRoundEvents || []).length} 条当前局事件历史，此操作无法撤销！`
                         : '您确定要重置游戏吗？这将清除所有数据，此操作无法撤销！';
                       
                       showConfirmDialog({
@@ -315,8 +400,9 @@ function App() {
                     className="w-full px-4 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white font-medium rounded-xl hover:from-red-600 hover:to-red-700 transition-all duration-300 transform hover:scale-105 shadow-lg shadow-red-500/25"
                   >
                     🔄 重置游戏
-                    {isGameStarted && <span className="ml-1 text-xs">({gameState.events.length}条记录)</span>}
+                    {isGameStarted && <span className="ml-1 text-xs">({(gameState.currentRoundEvents || []).length}条记录)</span>}
                   </button>
+                </div>
                 </div>
               </div>
             </div>

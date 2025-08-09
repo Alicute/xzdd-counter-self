@@ -2,7 +2,8 @@
 export interface Player {
   id: string;
   name: string;
-  score: number;
+  totalScore: number; // 总分数（所有局累计）
+  currentRoundScore: number; // 当前局分数
 }
 
 // 所有番型都可以叠加
@@ -50,9 +51,19 @@ export interface GameSettings {
   callTransfer: boolean; // 是否呼叫转移
 }
 
+// 局历史记录
+export interface RoundHistory {
+  roundNumber: number;
+  events: GameEvent[];
+  finalScores: { playerId: string; score: number }[]; // 该局结束时各玩家的分数变化
+  timestamp: number;
+}
+
 // 游戏状态
 export interface GameState {
   players: Player[];
-  events: GameEvent[];
+  currentRoundEvents: GameEvent[]; // 当前局的事件
+  roundHistory: RoundHistory[]; // 历史局记录
+  currentRound: number; // 当前局数
   settings: GameSettings;
 } 

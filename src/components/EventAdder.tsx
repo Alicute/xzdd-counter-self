@@ -147,7 +147,12 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
               </label>
               <select
                 value={winnerId}
-                onChange={(e) => setWinnerId(e.target.value)}
+                onChange={(e) => {
+                  setWinnerId(e.target.value);
+                  // 切换胡牌/杠牌玩家时，清空输家/被杠玩家选择
+                  setLoserIds([]);
+                  setGangTargetIds([]);
+                }}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 shadow-sm hover:border-gray-400 transition-colors appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22M6%208l4%204%204-4%22/%3E%3C/svg%3E')] bg-[length:1.5rem_1.5rem] bg-[right_0.5rem_center] bg-no-repeat"
               >
                 <option value="">请选择玩家</option>
@@ -166,6 +171,9 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-3">
                 {eventType === 'hu_pai' ? '在场玩家（输家）' : '点炮者'}
+                {!winnerId && (
+                  <span className="text-xs text-orange-600 ml-2">请先选择胡牌玩家</span>
+                )}
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                 {players.map(player => (
@@ -174,17 +182,19 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
                       ? 'bg-red-50 border-red-200'
                       : player.id === winnerId
                         ? 'bg-gray-100 border-gray-200 cursor-not-allowed'
-                        : 'bg-white border-gray-200 hover:bg-gray-50'
+                        : !winnerId
+                          ? 'bg-gray-50 border-gray-300 cursor-not-allowed'
+                          : 'bg-white border-gray-200 hover:bg-gray-50'
                     }`}>
                     <input
                       type="checkbox"
                       checked={loserIds.includes(player.id)}
                       onChange={() => toggleLoser(player.id)}
-                      disabled={player.id === winnerId}
+                      disabled={player.id === winnerId || !winnerId}
                       className="rounded border-gray-300 text-red-600 focus:ring-red-500"
                     />
                     <span className={`ml-2 text-sm ${
-                      player.id === winnerId ? 'text-gray-400' : 'text-gray-900'
+                      player.id === winnerId || !winnerId ? 'text-gray-400' : 'text-gray-900'
                     }`}>{player.name}</span>
                   </label>
                 ))}
@@ -212,6 +222,9 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-3">
                   被杠玩家
+                  {!winnerId && (
+                    <span className="text-xs text-orange-600 ml-2">请先选择杠牌玩家</span>
+                  )}
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   {players.map(player => (
@@ -220,17 +233,19 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
                         ? 'bg-blue-50 border-blue-200'
                         : player.id === winnerId
                           ? 'bg-gray-100 border-gray-200 cursor-not-allowed'
-                          : 'bg-white border-gray-200 hover:bg-gray-50'
+                          : !winnerId
+                            ? 'bg-gray-50 border-gray-300 cursor-not-allowed'
+                            : 'bg-white border-gray-200 hover:bg-gray-50'
                       }`}>
                       <input
                         type="checkbox"
                         checked={gangTargetIds.includes(player.id)}
                         onChange={() => toggleGangTarget(player.id)}
-                        disabled={player.id === winnerId}
+                        disabled={player.id === winnerId || !winnerId}
                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
                       <span className={`ml-2 text-sm ${
-                        player.id === winnerId ? 'text-gray-400' : 'text-gray-900'
+                        player.id === winnerId || !winnerId ? 'text-gray-400' : 'text-gray-900'
                       }`}>{player.name}</span>
                     </label>
                   ))}

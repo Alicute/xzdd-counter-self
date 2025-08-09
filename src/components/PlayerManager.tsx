@@ -32,7 +32,8 @@ function PlayerManager({ players, onPlayersChange }: PlayerManagerProps) {
     const newPlayer: Player = {
       id: `player-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       name: trimmedName,
-      score: 0,
+      totalScore: 0,
+      currentRoundScore: 0,
     };
     onPlayersChange([...players, newPlayer]);
     setNewPlayerName('');
@@ -51,18 +52,15 @@ function PlayerManager({ players, onPlayersChange }: PlayerManagerProps) {
   }, [players, onPlayersChange]);
 
   const resetScores = useCallback(() => {
-    onPlayersChange(players.map(p => ({ ...p, score: 0 })));
+    onPlayersChange(players.map(p => ({ 
+      ...p, 
+      totalScore: 0,
+      currentRoundScore: 0 
+    })));
   }, [players, onPlayersChange]);
 
   return (
-    <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-white/20">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-          <span className="text-white text-sm">👥</span>
-        </div>
-        <h2 className="text-xl font-bold text-gray-800">玩家管理</h2>
-      </div>
-
+    <div className="space-y-6">
       {/* 添加玩家 */}
       <div className="mb-6">
         <div className="flex gap-3 mb-2">
@@ -116,11 +114,19 @@ function PlayerManager({ players, onPlayersChange }: PlayerManagerProps) {
                 </div>
                 <div>
                   <span className="font-semibold text-gray-800">{player.name}</span>
-                  <div className={`text-lg font-bold ${player.score > 0 ? 'text-green-600' :
-                    player.score < 0 ? 'text-red-600' :
-                      'text-gray-600'
-                    }`}>
-                    {player.score > 0 ? '+' : ''}{player.score} 分
+                  <div className="flex flex-col text-sm">
+                    <div className={`font-bold ${player.totalScore > 0 ? 'text-green-600' :
+                      player.totalScore < 0 ? 'text-red-600' :
+                        'text-gray-600'
+                      }`}>
+                      总分: {player.totalScore > 0 ? '+' : ''}{player.totalScore}
+                    </div>
+                    <div className={`text-xs ${player.currentRoundScore > 0 ? 'text-emerald-600' :
+                      player.currentRoundScore < 0 ? 'text-red-500' :
+                        'text-gray-500'
+                      }`}>
+                      本局: {player.currentRoundScore > 0 ? '+' : ''}{player.currentRoundScore}
+                    </div>
                   </div>
                 </div>
               </div>

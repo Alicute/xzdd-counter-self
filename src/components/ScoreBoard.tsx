@@ -18,8 +18,8 @@ export default function ScoreBoard({ players }: ScoreBoardProps) {
     localStorage.setItem('scoreboard-collapsed', JSON.stringify(isCollapsed));
   }, [isCollapsed]);
 
-  const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
-  const totalScore = players.reduce((sum, player) => sum + player.score, 0);
+  const sortedPlayers = [...players].sort((a, b) => b.totalScore - a.totalScore);
+  const totalScore = players.reduce((sum, player) => sum + player.totalScore, 0);
 
   const getRankIcon = (index: number) => {
     switch (index) {
@@ -107,17 +107,17 @@ export default function ScoreBoard({ players }: ScoreBoardProps) {
                       </span>
                     </div>
                     <div className="text-sm text-gray-500">
-                      {player.score > 0 ? '领先' : player.score < 0 ? '落后' : '平手'}
+                      {player.totalScore > 0 ? '领先' : player.totalScore < 0 ? '落后' : '平手'}
                     </div>
                   </div>
                 </div>
 
                 <div className="text-right">
-                  <div className={`text-2xl font-bold ${player.score > 0 ? 'text-green-600' :
-                      player.score < 0 ? 'text-red-600' :
+                  <div className={`text-2xl font-bold ${player.totalScore > 0 ? 'text-green-600' :
+                      player.totalScore < 0 ? 'text-red-600' :
                         'text-gray-600'
                     }`}>
-                    {player.score > 0 ? '+' : ''}{player.score}
+                    {player.totalScore > 0 ? '+' : ''}{player.totalScore}
                   </div>
                   <div className="text-sm text-gray-500">分数</div>
                 </div>
@@ -128,12 +128,12 @@ export default function ScoreBoard({ players }: ScoreBoardProps) {
                 <div className="mt-3">
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
-                      className={`h-2 rounded-full transition-all duration-500 ${player.score > 0 ? 'bg-gradient-to-r from-green-400 to-green-600' :
-                          player.score < 0 ? 'bg-gradient-to-r from-red-400 to-red-600' :
+                      className={`h-2 rounded-full transition-all duration-500 ${player.totalScore > 0 ? 'bg-gradient-to-r from-green-400 to-green-600' :
+                          player.totalScore < 0 ? 'bg-gradient-to-r from-red-400 to-red-600' :
                             'bg-gradient-to-r from-gray-400 to-gray-600'
                         }`}
                       style={{
-                        width: `${Math.max(10, Math.min(100, Math.abs(player.score / Math.max(...sortedPlayers.map(p => Math.abs(p.score)))) * 100))}%`
+                        width: `${Math.max(10, Math.min(100, Math.abs(player.totalScore / Math.max(...sortedPlayers.map(p => Math.abs(p.totalScore)))) * 100))}%`
                       }}
                     ></div>
                   </div>
@@ -176,7 +176,7 @@ export default function ScoreBoard({ players }: ScoreBoardProps) {
             </div>
             <div className="text-center p-3 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-100">
               <div className="text-2xl font-bold text-purple-600">
-                {Math.max(...sortedPlayers.map(p => Math.abs(p.score)), 0)}
+                {Math.max(...sortedPlayers.map(p => Math.abs(p.totalScore)), 0)}
               </div>
               <div className="text-sm text-purple-600">最高分差</div>
             </div>

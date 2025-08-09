@@ -7,9 +7,10 @@ interface EventHistoryProps {
   events: GameEvent[];
   players: Player[];
   onEventRemove: (eventId: string) => void;
+  currentRound?: number;
 }
 
-export default function EventHistory({ events, players, onEventRemove }: EventHistoryProps) {
+export default function EventHistory({ events, players, onEventRemove, currentRound }: EventHistoryProps) {
   const [deleteConfirm, setDeleteConfirm] = useState<{
     isOpen: boolean;
     eventId: string;
@@ -73,7 +74,10 @@ export default function EventHistory({ events, players, onEventRemove }: EventHi
           <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-600 rounded-lg flex items-center justify-center">
             <span className="text-white text-sm">📜</span>
           </div>
-          <h2 className="text-xl font-bold text-gray-800">事件历史</h2>
+          <h2 className="text-xl font-bold text-gray-800">当前局事件历史</h2>
+          {currentRound && (
+            <span className="text-sm text-gray-600">第{currentRound}局</span>
+          )}
         </div>
         {events.length > 0 && (
           <div className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
@@ -87,8 +91,8 @@ export default function EventHistory({ events, players, onEventRemove }: EventHi
           <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <span className="text-3xl">📋</span>
           </div>
-          <p className="text-gray-500 text-lg">暂无事件记录</p>
-          <p className="text-gray-400 text-sm mt-1">开始游戏后记录会显示在这里</p>
+          <p className="text-gray-500 text-lg">当前局暂无事件记录</p>
+          <p className="text-gray-400 text-sm mt-1">添加事件后记录会显示在这里</p>
         </div>
       ) : (
         <div className="space-y-3 max-h-96 overflow-y-auto">
