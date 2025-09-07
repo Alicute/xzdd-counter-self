@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FanType, GangType } from '../types/mahjong';
 import type { Player, GameSettings, GameEvent } from '../types/mahjong';
 import { createZiMoEvent, createDianPaoEvent, createGangEvent, FAN_SCORE_MAP, calculateScoreFromFan, calculateTotalFan } from '../utils/mahjongCalculator';
@@ -7,9 +7,10 @@ interface EventAdderProps {
   players: Player[];
   settings: GameSettings;
   onEventAdd: (event: GameEvent) => void;
+  currentPlayerId?: string | null;
 }
 
-export default function EventAdder({ players, settings, onEventAdd }: EventAdderProps) {
+export default function EventAdder({ players, settings, onEventAdd, currentPlayerId }: EventAdderProps) {
   const [eventType, setEventType] = useState<'dian_pao_hu' | 'hu_pai' | 'gang'>('hu_pai');
   const [winnerId, setWinnerId] = useState('');
   const [loserIds, setLoserIds] = useState<string[]>([]);
@@ -40,7 +41,11 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
     onEventAdd(event);
 
     // 重置表单
-    setWinnerId('');
+    if (isOnlineMode && (eventType === 'hu_pai' || eventType === 'dian_pao_hu')) {
+      setWinnerId(currentPlayerId!);
+    } else {
+      setWinnerId('');
+    }
     setLoserIds([]);
     setSelectedFanTypes([]);
     setGangCount(0);
@@ -71,19 +76,32 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
       setSelectedFanTypes([...selectedFanTypes, fanType]);
     }
   };
+ 
+  // 监听事件类型和当前玩家 ID 的变化
+  useEffect(() => {
+    // 联机模式下，如果是胡牌或点炮事件，默认自己是赢家
+    if (currentPlayerId && (eventType === 'hu_pai' || eventType === 'dian_pao_hu')) {
+      setWinnerId(currentPlayerId);
+    } else if (!currentPlayerId) {
+      // 本地模式或者 eventType 变为 gang 时，不清空，让用户自己选
+    }
+  }, [eventType, currentPlayerId]);
 
   // 所有番型列表
   const allFanTypes = [
-    FanType.XIAO_HU, 
-    FanType.DA_DUI_ZI, 
-    FanType.JIN_GOU_DIAO, 
-    FanType.XIAO_QI_DUI, 
-    FanType.LONG_QI_DUI, 
+    FanType.XIAO_HU,
+    FanType.DA_DUI_ZI,
+    FanType.JIN_GOU_DIAO,
+    FanType.XIAO_QI_DUI,
+    FanType.LONG_QI_DUI,
     FanType.QING_YI_SE,
-    FanType.GANG_SHANG_HUA, 
-    FanType.GANG_SHANG_PAO, 
+    FanType.GANG_SHANG_HUA,
+    FanType.GANG_SHANG_PAO,
     FanType.HAI_DI_LAO
   ];
+ 
+  const isOnlineMode = !!currentPlayerId;
+  const isHuEventOnline = isOnlineMode && (eventType === 'hu_pai' || eventType === 'dian_pao_hu');
 
   return (
     <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 hover:shadow-xl transition-shadow duration-300">
@@ -153,7 +171,8 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
                   setLoserIds([]);
                   setGangTargetIds([]);
                 }}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 shadow-sm hover:border-gray-400 transition-colors appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22M6%208l4%204%204-4%22/%3E%3C/svg%3E')] bg-[length:1.5rem_1.5rem] bg-[right_0.5rem_center] bg-no-repeat"
+                disabled={isHuEventOnline}
+                className={`w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 shadow-sm hover:border-gray-400 transition-colors appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22M6%208l4%204%204-4%22/%3E%3C/svg%3E')] bg-[length:1.5rem_1.5rem] bg-[right_0.5rem_center] bg-no-repeat ${isHuEventOnline ? 'bg-gray-100 cursor-not-allowed' : ''}`}
               >
                 <option value="">请选择玩家</option>
                 {players.map(player => (
@@ -180,7 +199,7 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
                   <label key={player.id} className={`flex items-center p-3 rounded-lg border cursor-pointer transition-colors ${
                     loserIds.includes(player.id)
                       ? 'bg-red-50 border-red-200'
-                      : player.id === winnerId
+                      : (player.id === winnerId && eventType !== 'hu_pai') || (isOnlineMode && player.id === currentPlayerId && eventType === 'hu_pai')
                         ? 'bg-gray-100 border-gray-200 cursor-not-allowed'
                         : !winnerId
                           ? 'bg-gray-50 border-gray-300 cursor-not-allowed'
@@ -190,11 +209,12 @@ export default function EventAdder({ players, settings, onEventAdd }: EventAdder
                       type="checkbox"
                       checked={loserIds.includes(player.id)}
                       onChange={() => toggleLoser(player.id)}
-                      disabled={player.id === winnerId || !winnerId}
+                      disabled={(player.id === winnerId) || !winnerId}
                       className="rounded border-gray-300 text-red-600 focus:ring-red-500"
                     />
                     <span className={`ml-2 text-sm ${
-                      player.id === winnerId || !winnerId ? 'text-gray-400' : 'text-gray-900'
+                      (player.id === winnerId) || !winnerId
+                       ? 'text-gray-400' : 'text-gray-900'
                     }`}>{player.name}</span>
                   </label>
                 ))}
