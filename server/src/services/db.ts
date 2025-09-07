@@ -11,7 +11,8 @@ export interface User {
 }
 
 // 数据库文件路径
-const DB_PATH = './mahjong_rooms.db';
+// 数据库文件路径，指向一个专门的 data 目录以便 Docker Volume 挂载
+const DB_PATH = './data/mahjong_rooms.db';
 
 // 创建并打开数据库连接
 const db = new sqlite3.Database(DB_PATH, (err) => {

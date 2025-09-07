@@ -5,7 +5,9 @@ import type { GameSettings } from '../types/mahjong';
 import type { User } from '../types/user';
 import type { LobbyRoomInfo } from '../types/lobby';
 
-const SERVER_URL = 'http://localhost:3001';
+// 在生产环境中，我们会把前端构建成静态文件由后端托管，
+// 所以这里不再需要硬编码的URL。Socket.IO客户端会自动连接到提供网页的同一个服务器。
+const SERVER_URL = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001';
 
 // 使用 'as any' 是因为 socket.io-client 的类型有时与 NodeJS 的 EventEmitter 冲突
 const socket: Socket = io(SERVER_URL, {

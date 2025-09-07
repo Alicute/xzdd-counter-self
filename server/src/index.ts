@@ -1,6 +1,7 @@
 import express from 'express';
 import http from 'http';
 import { Server, Socket } from 'socket.io';
+import path from 'path';
 import { createRoom, joinRoom, getRoom, leaveRoom, updateGameState, updateRoom, goToNextRound, kickPlayerFromRoom, endGameAndDeleteRoom, getLobbyInfo, handlePlayerDisconnect, settleGame } from './services/roomManager';
 import { GameEvent, GameSettings } from './types/mahjong';
 import { applyEventToPlayers } from './utils/mahjongCalculator';
@@ -24,6 +25,25 @@ const PORT = process.env.PORT || 3001;
 app.get('/', (req, res) => {
   res.send('Mahjong Counter Server is running!');
 });
+
+// --- 生产环境配置 ---
+// 在生产环境中，Express需要托管前端Vite构建出的静态文件
+// 注意: process.env.NODE_ENV 需要在启动时由 PM2 或其他工具设置
+if (process.env.NODE_ENV === 'production') {
+  // dist目录的路径。当 tsc 编译后, __dirname 指向 server/dist/src,
+  // 因此需要回退三级到项目根目录，再进入 'dist' 文件夹。
+  const clientBuildPath = path.join(__dirname, '..', '..', 'dist');
+  console.log(`[Production Mode] Serving static files from: ${clientBuildPath}`);
+
+  app.use(express.static(clientBuildPath));
+
+  // "CATCHALL" HANDLER:
+  // 对于所有未匹配到API路由的GET请求，都返回前端的 index.html 文件。
+  // 这使得 React Router 可以在客户端接管路由。
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(clientBuildPath, 'index.html'));
+  });
+}
 
 // 自定义 Socket 类型，用于附加额外属性
 interface CustomSocket extends Socket {
