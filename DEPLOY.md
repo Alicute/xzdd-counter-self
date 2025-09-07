@@ -30,7 +30,7 @@ mkdir -p server/data
 #### 3. 构建并启动容器
 在项目根目录下，运行以下一个命令即可：
 ```bash
-docker compose up -d --build
+docker compose up -d --build  
 ```
 -   `up`: 创建并启动容器。
 -   `-d`: 在后台（detached mode）运行。
