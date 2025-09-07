@@ -8,16 +8,7 @@ interface ScoreBoardProps {
 
 export default function ScoreBoard({ gameState }: ScoreBoardProps) {
   const { players, settlementResult } = gameState;
-  const [isCollapsed, setIsCollapsed] = useState(() => {
-    // 从localStorage读取折叠状态，默认展开
-    const saved = localStorage.getItem('scoreboard-collapsed');
-    return saved ? JSON.parse(saved) : false;
-  });
-
-  // 保存折叠状态到localStorage
-  useEffect(() => {
-    localStorage.setItem('scoreboard-collapsed', JSON.stringify(isCollapsed));
-  }, [isCollapsed]);
+  const [isCollapsed, setIsCollapsed] = useState(true);
 
   const sortedPlayers = [...players].sort((a, b) => b.totalScore - a.totalScore);
   const totalScore = players.reduce((sum, player) => sum + player.totalScore, 0);

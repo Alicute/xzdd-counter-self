@@ -55,6 +55,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authStatus, setAuthStatus] = useState<'pending' | 'authenticated' | 'unauthenticated'>('pending');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [historyRefreshCounter, setHistoryRefreshCounter] = useState(0);
 
   // 动态的游戏状态：根据模式返回本地或线上的状态
   const gameState = useMemo(() => {
@@ -98,6 +99,23 @@ function App() {
     };
   }, []);
 
+  const clearOnlineSession = useCallback(() => {
+    // 重置客户端状态，并清理房间相关的socket监听器
+    console.log('Clearing online session and cleaning up room listeners...');
+    socketService.cleanupRoomListeners(); // <--- 关键修复
+    setRoom(null);
+    setError(null);
+    setGameMode('online'); // 直接返回大厅，而不是模式选择
+    setHistoryRefreshCounter(c => c + 1); // 触发历史记录刷新
+  }, []);
+
+  const handleKicked = useCallback(() => {
+    console.log('Player kicked, cleaning up room listeners...');
+    socketService.cleanupRoomListeners();
+    setRoom(null);
+    setGameMode('online'); // 保持在线模式，回到大厅
+    setHistoryRefreshCounter(c => c + 1); // 触发历史记录刷新
+  }, []);
   // WebSocket 事件处理
   useEffect(() => {
     const handleRoomStateUpdate = (newRoom: Room) => {
@@ -132,11 +150,7 @@ function App() {
           message,
           type: 'info',
           confirmText: '返回主菜单',
-          onConfirm: () => {
-            // 不需要清除 userId，只需要重置游戏状态
-            setRoom(null);
-            setGameMode(null);
-          }
+          onConfirm: clearOnlineSession
         });
       });
     }
@@ -147,10 +161,7 @@ function App() {
         message,
         type: 'info',
         confirmText: '好的',
-        onConfirm: () => {
-          setRoom(null);
-          setGameMode('online'); // 保持在线模式，显示大厅
-        }
+        onConfirm: handleKicked
       });
     });
 
@@ -161,7 +172,7 @@ function App() {
       socketService.connect();
     }
     
-  }, [authStatus, gameMode, room]);
+  }, [authStatus, gameMode, room, clearOnlineSession, handleKicked]);
  
   // 游戏结束时显示结算弹窗
   const prevIsGameFinished = useRef(gameState?.isGameFinished);
@@ -346,12 +357,6 @@ function App() {
     }
   }, [gameMode]);
  
-  const clearOnlineSession = () => {
-    // 现在只重置客户端状态，不清除登录信息
-    setRoom(null);
-    setError(null);
-    setGameMode(null);
-  };
 
   const handleLogin = async (username: string) => {
     if (!username.trim()) {
@@ -427,6 +432,7 @@ function App() {
             }
           }}
           onLogout={handleLogout}
+          historyRefreshCounter={historyRefreshCounter}
         />
       );
     }

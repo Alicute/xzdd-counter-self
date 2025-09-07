@@ -8,16 +8,7 @@ interface CurrentRoundBoardProps {
 }
 
 export default function CurrentRoundBoard({ players, currentRound }: CurrentRoundBoardProps) {
-  const [isCollapsed, setIsCollapsed] = useState(() => {
-    // 从localStorage读取折叠状态，默认展开
-    const saved = localStorage.getItem('current-round-board-collapsed');
-    return saved ? JSON.parse(saved) : false;
-  });
-
-  // 保存折叠状态到localStorage
-  useEffect(() => {
-    localStorage.setItem('current-round-board-collapsed', JSON.stringify(isCollapsed));
-  }, [isCollapsed]);
+  const [isCollapsed, setIsCollapsed] = useState(true);
 
   const sortedPlayers = [...players].sort((a, b) => b.currentRoundScore - a.currentRoundScore);
   const totalCurrentScore = players.reduce((sum, player) => sum + player.currentRoundScore, 0);

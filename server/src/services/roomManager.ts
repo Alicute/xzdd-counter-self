@@ -357,47 +357,22 @@ export async function kickPlayerFromRoom(id: string, targetUserId: string): Prom
  * @returns {Promise<void>}
  */
 export async function endGameAndDeleteRoom(id: string): Promise<void> {
+  // 1. 先获取房间信息，为后续清理玩家状态做准备
   const room = await getRoom(id);
-  if (room) {
-    // 只有当游戏开始过（有事件或历史记录），才进行归档
-    const hasGameStarted = room.gameState.currentRoundEvents.length > 0 || room.gameState.roundHistory.length > 0;
-    
-    if (hasGameStarted) {
-      // 在删除前进行归档，先结算当前局的分数
-      const settledPlayers = settleCurrentRound([...room.gameState.players]);
-      
-      const archive: GameArchive = {
-        id: room.id,
-        endedAt: Date.now(),
-        hostUserId: room.hostUserId,
-        players: settledPlayers
-          .filter(p => p.userId) // 确保 userId 存在
-          .map(p => ({
-            userId: p.userId!, // 使用非空断言
-            name: p.name,
-            finalScore: p.totalScore,
-          })),
-        gameHistory: room.gameState.roundHistory.map(h => ({
-          round: h.roundNumber,
-          events: h.events,
-          finalScores: h.finalScores.reduce((acc, score) => {
-            acc[score.playerId] = score.score;
-            return acc;
-          }, {} as { [key: string]: number }),
-        })),
-        settings: room.gameState.settings,
-      };
-      await saveGameArchive(archive);
-    }
 
-    // 将所有仍在房间内的玩家的 currentRoomId 设为 null
-    if (room.players) {
-        const userIds = room.players.map(p => p.userId).filter(Boolean) as string[];
-        await Promise.all(userIds.map(uid => updateUserRoom(uid, null)));
-    }
+  // 2. 调用 settleGame 来处理结算和存档，忽略返回值
+  // 即使房间不存在或已结算，settleGame 也能安全处理
+  await settleGame(id);
+
+  // 3. 清理所有玩家的 currentRoomId
+  if (room && room.players) {
+      const userIds = room.players.map(p => p.userId).filter(Boolean) as string[];
+      await Promise.all(userIds.map(uid => updateUserRoom(uid, null)));
   }
+
+  // 4. 从数据库中删除房间
   await deleteRoomFromDb(id);
-  console.log(`💥 Room ${id} ended, archived (if started), and deleted.`);
+  console.log(`💥 Room ${id} ended, settled, archived, and deleted.`);
 }
 
 /**
@@ -493,6 +468,43 @@ export async function settleGame(id: string): Promise<Room | null> {
     settlementResult: settlementResult,
   };
 
-  // 4. 更新并保存房间
+  // 4. 存档
+  const hasGameStarted = newGameState.currentRoundEvents.length > 0 || newGameState.roundHistory.length > 0;
+  if (hasGameStarted) {
+    const archive: GameArchive = {
+      id: room.id,
+      endedAt: Date.now(),
+      hostUserId: room.hostUserId,
+      players: newGameState.players
+        .filter(p => p.id) // 确保 id 存在
+        .map(p => ({
+          userId: p.id, // 在 gameState 中, player.id 就是 userId
+          name: p.name,
+          finalScore: p.totalScore,
+        })),
+      gameHistory: [
+        ...newGameState.roundHistory.map(h => ({
+          round: h.roundNumber,
+          events: h.events,
+          finalScores: h.finalScores.reduce((acc, score) => {
+            acc[score.playerId] = score.score;
+            return acc;
+          }, {} as Record<string, number>),
+        })),
+        {
+          round: newGameState.currentRound,
+          events: newGameState.currentRoundEvents,
+          finalScores: newGameState.players.reduce((acc, p) => {
+            acc[p.id] = p.currentRoundScore;
+            return acc;
+          }, {} as Record<string, number>),
+        }
+      ],
+      settings: newGameState.settings,
+    };
+    await saveGameArchive(archive);
+  }
+
+  // 5. 更新并保存房间
   return updateGameState(id, newGameState);
 }

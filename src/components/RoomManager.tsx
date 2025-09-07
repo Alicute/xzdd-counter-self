@@ -14,9 +14,10 @@ interface RoomManagerProps {
   onCreateRoom: (settings: GameSettings) => void; // 更新类型
   onJoinRoom: (roomId: string) => void;
   onLogout: () => void;
+  historyRefreshCounter: number;
 }
 
-export default function RoomManager({ room, error, currentUser, onCreateRoom, onJoinRoom, onLogout }: RoomManagerProps) {
+export default function RoomManager({ room, error, currentUser, onCreateRoom, onJoinRoom, onLogout, historyRefreshCounter }: RoomManagerProps) {
   const [roomId, setRoomId] = useState('');
   const [lobbyInfo, setLobbyInfo] = useState<LobbyRoomInfo[]>([]);
   
@@ -125,7 +126,7 @@ export default function RoomManager({ room, error, currentUser, onCreateRoom, on
 
         {/* 右侧：牌局历史 */}
         <div className="bg-gray-900 text-white rounded-lg shadow-md p-6 lg:col-span-1">
-            <GameHistoryPanel />
+            <GameHistoryPanel key={historyRefreshCounter} />
         </div>
       </div>
     </div>

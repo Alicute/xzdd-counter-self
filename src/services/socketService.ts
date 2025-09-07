@@ -83,6 +83,15 @@ export const socketService = {
     socket.on('kicked', callback);
   },
 
+  // 移除与特定房间会话相关的监听器
+  cleanupRoomListeners: () => {
+    socket.off('roomStateUpdate');
+    socket.off('error'); // error 消息通常与房间操作有关
+    socket.off('roomEnded');
+    socket.off('kicked');
+    console.log('🧹 Cleaned up room-specific listeners');
+  },
+
   // 移除监听器，防止内存泄漏
   cleanupListeners: () => {
     socket.off('roomStateUpdate');
@@ -90,7 +99,8 @@ export const socketService = {
     socket.off('connect');
     socket.off('roomEnded');
     socket.off('kicked');
-    // lobbyUpdate is handled separately
+    socket.off('lobbyUpdate');
+    console.log('🧹 Cleaned up listeners on app unmount');
   },
 
   // 单独清理大厅监听器

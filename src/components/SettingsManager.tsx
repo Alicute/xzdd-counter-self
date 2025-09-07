@@ -1,11 +1,23 @@
+import { useState, useEffect } from 'react';
 import type { GameSettings } from '../types/mahjong';
-
+ 
 interface SettingsManagerProps {
   settings: GameSettings;
   onSettingsChange: (settings: GameSettings) => void;
 }
-
+ 
 export default function SettingsManager({ settings, onSettingsChange }: SettingsManagerProps) {
+  // 为 pricePerFan 创建一个本地的字符串状态，以获得更好的输入体验
+  const [priceStr, setPriceStr] = useState(settings.pricePerFan.toString());
+
+  // 当外部的 settings 变化时，同步本地的 priceStr
+  useEffect(() => {
+    // 只有当解析后的值与当前输入框的值不同时才更新，避免覆盖用户的输入
+    if (parseFloat(priceStr) !== settings.pricePerFan) {
+      setPriceStr(settings.pricePerFan.toString());
+    }
+  }, [settings.pricePerFan]);
+
   const updateSetting = <K extends keyof GameSettings>(
     key: K,
     value: GameSettings[K]
@@ -13,6 +25,22 @@ export default function SettingsManager({ settings, onSettingsChange }: Settings
     onSettingsChange({ ...settings, [key]: value });
   };
 
+  const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    
+    // 允许空字符串、数字、小数点
+    if (value === '' || /^\d*\.?\d*$/.test(value)) {
+      setPriceStr(value);
+      
+      // 如果值是有效的浮点数，则更新父组件状态
+      const numValue = parseFloat(value);
+      if (!isNaN(numValue) && numValue > 0) {
+        updateSetting('pricePerFan', numValue);
+      }
+      // 如果输入框为空，我们不立即更新父组件，等待用户输入有效数字
+    }
+  };
+ 
   return (
     <div className="space-y-6">
       {/* 封顶番数 */}
@@ -72,8 +100,8 @@ export default function SettingsManager({ settings, onSettingsChange }: Settings
             type="number"
             min="0.1"
             step="0.1"
-            value={settings.pricePerFan}
-            onChange={(e) => updateSetting('pricePerFan', parseFloat(e.target.value) || 1)}
+            value={priceStr}
+            onChange={handlePriceChange}
             className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white/90"
           />
           <p className="text-sm text-gray-600 mt-2 flex items-center gap-2">

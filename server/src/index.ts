@@ -312,9 +312,18 @@ io.on('connection', (socket: CustomSocket) => {
       }
 
       if (player.userId === room.hostUserId) {
-        await endGameAndDeleteRoom(roomId);
+        // 1. 先通知房间内的所有客户端，房间即将结束
         io.to(roomId).emit('roomEnded', '房主已解散房间。');
+
+        // 2. 等待一小段时间，确保消息有足够的时间被发送和接收
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // 3. 执行后端的结算、存档和删除逻辑
+        await endGameAndDeleteRoom(roomId);
+        
+        // 4. 最后，强制所有在此房间 channel 的 socket 离开
         io.in(roomId).socketsLeave(roomId);
+        console.log(`🧹 All sockets have been removed from room ${roomId} channel.`);
       } else {
         socket.emit('error', '只有房主才能结束游戏');
       }

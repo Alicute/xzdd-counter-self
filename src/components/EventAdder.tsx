@@ -79,10 +79,16 @@ export default function EventAdder({ gameState, onEventAdd, onNextRound, isHost,
 
   // Reverted to original multi-select logic as requested.
   const toggleGangTarget = (playerId: string) => {
-    if (gangTargetIds.includes(playerId)) {
-      setGangTargetIds(gangTargetIds.filter(id => id !== playerId));
+    // 根据用户的新反馈，当是点杠时，采用强制单选逻辑
+    if (gangType === GangType.DIAN_GANG) {
+      setGangTargetIds(prev => (prev.includes(playerId) ? [] : [playerId]));
     } else {
-      setGangTargetIds([...gangTargetIds, playerId]);
+      // 暗杠和巴杠保持允许多选（例如为了支持血战到底刮风下雨）
+      if (gangTargetIds.includes(playerId)) {
+        setGangTargetIds(gangTargetIds.filter(id => id !== playerId));
+      } else {
+        setGangTargetIds([...gangTargetIds, playerId]);
+      }
     }
   };
 
@@ -118,6 +124,21 @@ export default function EventAdder({ gameState, onEventAdd, onNextRound, isHost,
  
   const isActorSelectionDisabled = isOnlineMode;
 
+  const isFormInvalid = (() => {
+    if (!winnerId) return true;
+    if (eventType === 'hu_pai') return loserIds.length === 0;
+    if (eventType === 'dian_pao_hu') return loserIds.length !== 1;
+    if (eventType === 'gang') {
+      // 用户需求：点杠的目标必须是1个人
+      if (gangType === GangType.DIAN_GANG) {
+        return gangTargetIds.length !== 1;
+      }
+      // 暗杠和巴杠允许多个目标（例如，血战到底的刮风下雨），所以只需检查是否为空
+      return gangTargetIds.length === 0;
+    }
+    return false;
+  })();
+
   return (
     <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 hover:shadow-xl transition-shadow duration-300">
       <div className="p-4 sm:p-6 border-b border-gray-100">
@@ -142,7 +163,11 @@ export default function EventAdder({ gameState, onEventAdd, onNextRound, isHost,
                     type="radio"
                     value="hu_pai"
                     checked={eventType === 'hu_pai'}
-                    onChange={(e) => setEventType(e.target.value as 'dian_pao_hu' | 'hu_pai' | 'gang')}
+                    onChange={(e) => {
+                      setEventType(e.target.value as 'dian_pao_hu' | 'hu_pai' | 'gang');
+                      setLoserIds([]);
+                      setGangTargetIds([]);
+                    }}
                     className="text-green-600 focus:ring-green-500"
                   />
                   <span className="ml-2 text-sm font-medium">胡牌(自摸)</span>
@@ -152,7 +177,11 @@ export default function EventAdder({ gameState, onEventAdd, onNextRound, isHost,
                     type="radio"
                     value="dian_pao_hu"
                     checked={eventType === 'dian_pao_hu'}
-                    onChange={(e) => setEventType(e.target.value as 'dian_pao_hu' | 'hu_pai' | 'gang')}
+                    onChange={(e) => {
+                      setEventType(e.target.value as 'dian_pao_hu' | 'hu_pai' | 'gang');
+                      setLoserIds([]);
+                      setGangTargetIds([]);
+                    }}
                     className="text-orange-600 focus:ring-orange-500"
                   />
                   <span className="ml-2 text-sm font-medium">点炮胡牌</span>
@@ -162,7 +191,11 @@ export default function EventAdder({ gameState, onEventAdd, onNextRound, isHost,
                     type="radio"
                     value="gang"
                     checked={eventType === 'gang'}
-                    onChange={(e) => setEventType(e.target.value as 'dian_pao_hu' | 'hu_pai' | 'gang')}
+                    onChange={(e) => {
+                      setEventType(e.target.value as 'dian_pao_hu' | 'hu_pai' | 'gang');
+                      setLoserIds([]);
+                      setGangTargetIds([]);
+                    }}
                     className="text-blue-600 focus:ring-blue-500"
                   />
                   <span className="ml-2 text-sm font-medium">杠牌</span>
@@ -202,6 +235,9 @@ export default function EventAdder({ gameState, onEventAdd, onNextRound, isHost,
                   <span className="text-xs text-orange-600 ml-2">请先选择胡牌玩家</span>
                 )}
               </label>
+              {eventType === 'dian_pao_hu' && loserIds.length !== 1 && winnerId && (
+                <p className="text-xs text-red-500 mb-2 -mt-1">点炮只能选择一位玩家。</p>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                 {players.map(player => (
                   <label key={player.id} className={`flex items-center p-3 rounded-lg border cursor-pointer transition-colors ${
@@ -253,6 +289,9 @@ export default function EventAdder({ gameState, onEventAdd, onNextRound, isHost,
                     <span className="text-xs text-orange-600 ml-2">请先选择杠牌玩家</span>
                   )}
                 </label>
+                {eventType === 'gang' && gangType === GangType.DIAN_GANG && gangTargetIds.length !== 1 && winnerId && (
+                  <p className="text-xs text-red-500 mb-2 -mt-2">点杠只能选择一位玩家。</p>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   {players.map(player => (
                     <label key={player.id} className={`flex items-center p-2 rounded-lg border cursor-pointer transition-colors ${
@@ -421,17 +460,9 @@ export default function EventAdder({ gameState, onEventAdd, onNextRound, isHost,
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={handleAddEvent}
-                disabled={
-                  !winnerId ||
-                  (eventType === 'hu_pai' && loserIds.length === 0) ||
-                  (eventType === 'dian_pao_hu' && loserIds.length !== 1) ||
-                  (eventType === 'gang' && gangTargetIds.length === 0)
-                }
+                disabled={isFormInvalid}
                 className={`flex-1 px-6 py-3 rounded-xl font-bold transition-all duration-200 shadow-lg ${
-                  (!winnerId ||
-                   (eventType === 'hu_pai' && loserIds.length === 0) ||
-                   (eventType === 'dian_pao_hu' && loserIds.length !== 1) ||
-                   (eventType === 'gang' && gangTargetIds.length === 0))
+                  isFormInvalid
                     ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
                     : 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:from-blue-600 hover:to-indigo-700 transform hover:scale-105 shadow-blue-500/25'
                 }`}
