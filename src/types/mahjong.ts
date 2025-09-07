@@ -50,6 +50,7 @@ export interface GameEvent {
 export interface GameSettings {
   maxFan: number; // 几番封顶
   callTransfer: boolean; // 是否呼叫转移
+  pricePerFan: number; // 每番（或每分）对应的价格
 }
 
 // 局历史记录
@@ -67,4 +68,6 @@ export interface GameState {
   roundHistory: RoundHistory[]; // 历史局记录
   currentRound: number; // 当前局数
   settings: GameSettings;
-} 
+  isGameFinished?: boolean; // 游戏是否已结束
+  settlementResult?: string[]; // 结算结果
+}

@@ -1,8 +1,9 @@
 // roomManager.ts
 // 负责管理所有游戏房间的逻辑
-import { GameState } from '../types/mahjong';
+import { GameState, GameSettings } from '../types/mahjong';
 import { getDefaultGameState } from '../utils/gameState';
-import { getRoomFromDb, saveRoomToDb, deleteRoomFromDb, updateUserRoom, getAllRooms } from './db';
+import { getRoomFromDb, saveRoomToDb, deleteRoomFromDb, updateUserRoom, getAllRooms, saveGameArchive } from './db';
+import type { GameArchive } from '../types/archive';
 import { settleCurrentRound } from '../utils/mahjongCalculator';
 
 // 玩家在大厅中等待时的信息
@@ -52,7 +53,10 @@ async function generateRoomId(): Promise<string> {
  * @param hostPlayer 创建者信息
  * @returns {Promise<Room>} 创建的房间信息
  */
-export async function createRoom(hostPlayer: Omit<LobbyPlayer, 'isConnected'>): Promise<Room> {
+export async function createRoom(
+  hostPlayer: Omit<LobbyPlayer, 'isConnected'>,
+  settings: GameSettings
+): Promise<Room> {
   const id = await generateRoomId();
   
   if (!hostPlayer.userId) {
@@ -60,13 +64,18 @@ export async function createRoom(hostPlayer: Omit<LobbyPlayer, 'isConnected'>): 
   }
 
   const connectedHostPlayer: LobbyPlayer = { ...hostPlayer, isConnected: true };
+  
+  const defaultGameState = getDefaultGameState();
 
   const newRoom: Room = {
     id,
-    name: `${hostPlayer.name}的房间`, // 新增房间名
+    name: `${hostPlayer.name}的房间`,
     hostUserId: hostPlayer.userId,
     players: [connectedHostPlayer],
-    gameState: getDefaultGameState(), // 初始化默认游戏状态
+    gameState: {
+      ...defaultGameState,
+      settings: settings, // 应用传入的设置
+    },
   };
   await saveRoomToDb(id, newRoom as any);
   if(hostPlayer.userId) {
@@ -188,23 +197,50 @@ export async function leaveRoom(playerId: string, id: string): Promise<{ updated
  * @param roomId 房间 ID
  * @returns {Promise<Room | null>} 更新后的房间信息或 null
  */
-export async function handlePlayerDisconnect(socketId: string, id: string): Promise<Room | null> {
+export async function handlePlayerDisconnect(socketId: string, id: string): Promise<{ updatedRoom: Room | null, wasHost: boolean }> {
   const room = await getRoom(id);
-  if (!room) return null;
+  if (!room) return { updatedRoom: null, wasHost: false };
 
-  const player = room.players.find(p => p.id === socketId);
-  if (!player) return null; // 该 socketId 可能已经因为重连被替换了，所以找不到是正常的
+  const playerLeaving = room.players.find(p => p.id === socketId);
 
-  console.log(`🔌 Player ${player.name} in room ${id} disconnected.`);
+  if (!playerLeaving) {
+    // 该 socketId 可能已经因为重连被替换了，所以找不到是正常的
+    return { updatedRoom: room, wasHost: false };
+  }
 
+  console.log(`🔌 Player ${playerLeaving.name} in room ${id} disconnected.`);
+
+  // 1. 更新玩家的连接状态
   const updatedPlayers = room.players.map(p =>
     p.id === socketId ? { ...p, isConnected: false } : p
   );
 
-  const updatedRoom: Room = { ...room, players: updatedPlayers };
+  let updatedRoom: Room = { ...room, players: updatedPlayers };
+
+  // 2. 检查是否所有人都离线了
+  if (updatedPlayers.every(p => !p.isConnected)) {
+    console.log(`💨 All players in room ${id} are disconnected. Deleting room.`);
+    await endGameAndDeleteRoom(id);
+    // 返回 null 表示房间已被删除
+    return { updatedRoom: null, wasHost: false };
+  }
+
+  // 3. 检查断开的是否是房主，如果是，则转移房主权限
+  if (playerLeaving.userId === updatedRoom.hostUserId) {
+    // 从其他在线的玩家中选举一个新房主
+    const newHost = updatedPlayers.find(p => p.userId !== playerLeaving.userId && p.isConnected);
+    
+    if (newHost && newHost.userId) {
+      updatedRoom.hostUserId = newHost.userId;
+      console.log(`👑 Host disconnected. New host in room ${id} is ${newHost.name}.`);
+    }
+    // 如果没有其他在线玩家，房主权限暂时不变，等待有人重连或所有人都断线
+  }
+
+  // 4. 保存并返回
   await saveRoomToDb(id, updatedRoom as any);
-  
-  return updatedRoom;
+  // wasHost 字段现在只用于通知 index.ts 房间是否被删除，所以当房间存在时，它总是 false
+  return { updatedRoom, wasHost: false };
 }
 
 /**
@@ -277,19 +313,91 @@ export async function goToNextRound(id: string): Promise<Room | null> {
 }
 
 /**
+ * 从房间中移除一个玩家（踢人）
+ * @param id 房间ID
+ * @param targetUserId 要踢出的玩家的 userId
+ * @returns {Promise<{ updatedRoom: Room; kickedPlayer: LobbyPlayer } | { error: string }>}
+ */
+export async function kickPlayerFromRoom(id: string, targetUserId: string): Promise<{ updatedRoom: Room; kickedPlayer: LobbyPlayer } | { error: string }> {
+  const room = await getRoom(id);
+  if (!room) {
+    return { error: '房间不存在' };
+  }
+
+  if (room.hostUserId === targetUserId) {
+    return { error: '不能将房主踢出房间' };
+  }
+
+  const playerToKick = room.players.find(p => p.userId === targetUserId);
+  if (!playerToKick) {
+    return { error: '该玩家不在房间内' };
+  }
+
+  const updatedPlayers = room.players.filter(p => p.userId !== targetUserId);
+
+  const updatedRoom: Room = {
+    ...room,
+    players: updatedPlayers,
+  };
+
+  // 保存更新后的房间
+  await saveRoomToDb(id, updatedRoom as any);
+
+  // 更新被踢玩家的用户表
+  await updateUserRoom(targetUserId, null);
+
+  console.log(`👢 Player ${playerToKick.name} was kicked from room ${id}.`);
+
+  return { updatedRoom, kickedPlayer: playerToKick };
+}
+
+/**
  * 结束并删除一个房间
  * @param roomId 房间ID
  * @returns {Promise<void>}
  */
 export async function endGameAndDeleteRoom(id: string): Promise<void> {
   const room = await getRoom(id);
-  if (room && room.players) {
+  if (room) {
+    // 只有当游戏开始过（有事件或历史记录），才进行归档
+    const hasGameStarted = room.gameState.currentRoundEvents.length > 0 || room.gameState.roundHistory.length > 0;
+    
+    if (hasGameStarted) {
+      // 在删除前进行归档，先结算当前局的分数
+      const settledPlayers = settleCurrentRound([...room.gameState.players]);
+      
+      const archive: GameArchive = {
+        id: room.id,
+        endedAt: Date.now(),
+        hostUserId: room.hostUserId,
+        players: settledPlayers
+          .filter(p => p.userId) // 确保 userId 存在
+          .map(p => ({
+            userId: p.userId!, // 使用非空断言
+            name: p.name,
+            finalScore: p.totalScore,
+          })),
+        gameHistory: room.gameState.roundHistory.map(h => ({
+          round: h.roundNumber,
+          events: h.events,
+          finalScores: h.finalScores.reduce((acc, score) => {
+            acc[score.playerId] = score.score;
+            return acc;
+          }, {} as { [key: string]: number }),
+        })),
+        settings: room.gameState.settings,
+      };
+      await saveGameArchive(archive);
+    }
+
     // 将所有仍在房间内的玩家的 currentRoomId 设为 null
-    const userIds = room.players.map(p => p.userId).filter(Boolean) as string[];
-    await Promise.all(userIds.map(uid => updateUserRoom(uid, null)));
+    if (room.players) {
+        const userIds = room.players.map(p => p.userId).filter(Boolean) as string[];
+        await Promise.all(userIds.map(uid => updateUserRoom(uid, null)));
+    }
   }
   await deleteRoomFromDb(id);
-  console.log(`💥 Room ${id} ended and deleted by host.`);
+  console.log(`💥 Room ${id} ended, archived (if started), and deleted.`);
 }
 
 /**
@@ -314,4 +422,77 @@ export async function getLobbyInfo(): Promise<LobbyRoomInfo[]> {
   });
 
   return lobbyInfo;
+}
+
+/**
+ * 在服务器端计算最终金钱结算的辅助函数
+ * @param players - 包含最终总分的玩家列表
+ * @param pricePerFan - 每分的价格
+ * @returns {string[]} 结算详情字符串数组
+ */
+function calculateServerSettlement(players: Player[], pricePerFan: number): string[] {
+  type PlayerMoney = { name: string, money: number };
+
+  const finalScores = players.map(p => ({
+    name: p.name,
+    score: p.totalScore,
+  }));
+
+  if (finalScores.every(p => p.score === 0)) {
+    return [];
+  }
+
+  const winners: PlayerMoney[] = finalScores
+    .filter(p => p.score > 0)
+    .map(p => ({ name: p.name, money: p.score * pricePerFan }));
+
+  const losers: PlayerMoney[] = finalScores
+    .filter(p => p.score < 0)
+    .map(p => ({ name: p.name, money: -p.score * pricePerFan }));
+
+  let result: string[] = [];
+
+  for (let loser of losers) {
+    for (let winner of winners) {
+      if (loser.money <= 0.001) break; // 浮点数精度问题
+      if (winner.money > 0.001) {
+        const pay = Math.min(loser.money, winner.money);
+        loser.money -= pay;
+        winner.money -= pay;
+        result.push(`${loser.name} -> ${winner.name} : ${pay.toFixed(2)} 元`);
+      }
+    }
+  }
+  return result;
+}
+
+
+/**
+ * 终局结算
+ * @param id 房间ID
+ * @returns {Promise<Room | null>} 更新后的房间信息
+ */
+export async function settleGame(id: string): Promise<Room | null> {
+  const room = await getRoom(id);
+  if (!room) return null;
+
+  // 1. 结算当前局分数，将其加到总分上
+  const settledPlayers = settleCurrentRound(room.gameState.players);
+  const finalGameState = { ...room.gameState, players: settledPlayers };
+
+  // 2. 计算金钱结算结果
+  const settlementResult = calculateServerSettlement(
+    finalGameState.players,
+    finalGameState.settings.pricePerFan
+  );
+
+  // 3. 构造最终的游戏状态
+  const newGameState: GameState = {
+    ...finalGameState,
+    isGameFinished: true,
+    settlementResult: settlementResult,
+  };
+
+  // 4. 更新并保存房间
+  return updateGameState(id, newGameState);
 }

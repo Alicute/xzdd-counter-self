@@ -63,6 +63,25 @@ export default function SettingsManager({ settings, onSettingsChange }: Settings
           </label>
         </div>
 
+        {/* 底分设置 */}
+        <div className="p-4 bg-gradient-to-r from-green-50 to-cyan-50 rounded-xl border border-green-100">
+          <label className="block text-sm font-semibold text-gray-700 mb-3">
+            💰 底分设置 (元/分)
+          </label>
+          <input
+            type="number"
+            min="0.1"
+            step="0.1"
+            value={settings.pricePerFan}
+            onChange={(e) => updateSetting('pricePerFan', parseFloat(e.target.value) || 1)}
+            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white/90"
+          />
+          <p className="text-sm text-gray-600 mt-2 flex items-center gap-2">
+            <span className="text-green-500">💡</span>
+            设置每分对应的价格，当前默认：1元/分
+          </p>
+        </div>
+
         {/* 当前设置总览 */}
         <div className="p-4 bg-gradient-to-r from-gray-50 to-slate-50 rounded-xl border border-gray-100">
           <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
@@ -79,6 +98,12 @@ export default function SettingsManager({ settings, onSettingsChange }: Settings
               <span className="text-gray-600">呼叫转移:</span>
               <span className={`font-medium ${settings.callTransfer ? 'text-green-600' : 'text-gray-600'}`}>
                 {settings.callTransfer ? '开启' : '关闭'}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600">底分:</span>
+              <span className="font-medium text-gray-800">
+                {settings.pricePerFan} 元/分
               </span>
             </div>
           </div>

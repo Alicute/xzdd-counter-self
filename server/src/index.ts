@@ -1,10 +1,10 @@
 import express from 'express';
 import http from 'http';
-import { Server } from 'socket.io';
-import { createRoom, joinRoom, getRoom, leaveRoom, updateGameState, updateRoom, goToNextRound, endGameAndDeleteRoom, getLobbyInfo, handlePlayerDisconnect } from './services/roomManager';
-import { GameEvent } from './types/mahjong';
+import { Server, Socket } from 'socket.io';
+import { createRoom, joinRoom, getRoom, leaveRoom, updateGameState, updateRoom, goToNextRound, kickPlayerFromRoom, endGameAndDeleteRoom, getLobbyInfo, handlePlayerDisconnect, settleGame } from './services/roomManager';
+import { GameEvent, GameSettings } from './types/mahjong';
 import { applyEventToPlayers } from './utils/mahjongCalculator';
-import { initDb, findUserByUsername, createUser, findUserById } from './services/db';
+import { initDb, findUserByUsername, createUser, findUserById, getArchivesForUser } from './services/db';
 import crypto from 'crypto';
 
 const app = express();
@@ -25,8 +25,14 @@ app.get('/', (req, res) => {
   res.send('Mahjong Counter Server is running!');
 });
 
+// 自定义 Socket 类型，用于附加额外属性
+interface CustomSocket extends Socket {
+  roomId?: string;
+  userId?: string;
+}
+
 // 监听 WebSocket 连接
-io.on('connection', (socket) => {
+io.on('connection', (socket: CustomSocket) => {
   console.log(`🔌 A user connected: ${socket.id}`);
 
   // 监听登录或注册事件
@@ -63,6 +69,9 @@ io.on('connection', (socket) => {
         return callback({ error: '用户不存在' });
       }
 
+      socket.userId = user.id; // 在 socket 实例上附加 userId
+      console.log(`🔒 User ${user.username} authenticated with socket ${socket.id}`);
+
       // **架构重构**: 不再信任客户端发送的 roomId，唯一信任数据库中的 currentRoomId
       const effectiveRoomId = user.currentRoomId;
 
@@ -86,7 +95,7 @@ io.on('connection', (socket) => {
             // hostUserId 是永久的，在重连时不需要更新
             await updateRoom(updatedRoom);
 
-            (socket as any).roomId = room.id;
+            socket.roomId = room.id;
             socket.join(room.id);
             socket.leave('lobby');
 
@@ -111,11 +120,11 @@ io.on('connection', (socket) => {
   });
 
   // 监听创建房间事件
-  socket.on('createRoom', async ({ userId, username }: { userId: string, username: string }) => {
+  socket.on('createRoom', async ({ userId, username, settings }: { userId: string, username: string, settings: GameSettings }) => {
     try {
       const player = { id: socket.id, userId, name: username, totalScore: 0, currentRoundScore: 0 };
-      const room = await createRoom(player);
-      (socket as any).roomId = room.id; // 将 id 存储在 socket 实例上
+      const room = await createRoom(player, settings);
+      socket.roomId = room.id; // 将 id 存储在 socket 实例上
       socket.join(room.id);
       socket.leave('lobby'); // 创建房间后离开大厅
       
@@ -146,7 +155,7 @@ io.on('connection', (socket) => {
       }
 
       if (result.room) {
-        (socket as any).roomId = roomId; // 将 roomId 存储在 socket 实例上
+        socket.roomId = roomId; // 将 roomId 存储在 socket 实例上
         socket.join(roomId);
         socket.leave('lobby'); // 加入房间后离开大厅
         
@@ -176,14 +185,19 @@ io.on('connection', (socket) => {
   socket.on('disconnect', async () => {
     console.log(`👋 A user disconnected: ${socket.id}`);
     socket.leave('lobby'); // 确保断连时离开大厅
-    const roomId = (socket as any).roomId;
+    const roomId = socket.roomId;
     if (roomId) {
-      // 使用新的断连处理逻辑，只标记玩家为离线
-      const updatedRoom = await handlePlayerDisconnect(socket.id, roomId);
+      const { updatedRoom, wasHost } = await handlePlayerDisconnect(socket.id, roomId);
+      
       if (updatedRoom) {
-        // 广播更新后的房间状态给房间内的其他玩家
+        // 正常广播更新
         io.to(roomId).emit('roomStateUpdate', updatedRoom);
         console.log(`📢 Room ${roomId} state updated due to player disconnect.`);
+      } else {
+        // 房间已被删除 (因为房主断开或所有人都断开)
+        io.to(roomId).emit('roomEnded', wasHost ? '房主已断开连接，房间已解散。' : '所有玩家都已离开，房间已解散。');
+        io.in(roomId).socketsLeave(roomId); // 让所有仍在房间channel里的socket离开
+        console.log(`📢 Room ${roomId} was deleted, notifying remaining clients.`);
       }
     }
   });
@@ -299,7 +313,7 @@ io.on('connection', (socket) => {
 
       if (player.userId === room.hostUserId) {
         await endGameAndDeleteRoom(roomId);
-        socket.to(roomId).emit('roomEnded', '房主已解散房间。');
+        io.to(roomId).emit('roomEnded', '房主已解散房间。');
         io.in(roomId).socketsLeave(roomId);
       } else {
         socket.emit('error', '只有房主才能结束游戏');
@@ -307,6 +321,113 @@ io.on('connection', (socket) => {
     } catch (error) {
       console.error(`[ERROR] Ending game in room ${roomId}:`, error);
       socket.emit('error', '结束游戏时发生服务器错误');
+    }
+  });
+
+  // 监听结算游戏事件
+  socket.on('settleGame', async ({ roomId }: { roomId: string }) => {
+    try {
+      const room = await getRoom(roomId);
+      if (!room) {
+        return socket.emit('error', '房间不存在');
+      }
+      
+      const player = room.players.find(p => p.id === socket.id);
+      if (!player || !player.userId) {
+        return socket.emit('error', '未找到有效的玩家信息');
+      }
+
+      if (player.userId === room.hostUserId) {
+        const updatedRoom = await settleGame(roomId);
+        if (updatedRoom) {
+          io.to(roomId).emit('roomStateUpdate', updatedRoom);
+          console.log(`💰 Game settled in room ${roomId}`);
+        }
+      } else {
+        socket.emit('error', '只有房主才能进行结算');
+      }
+    } catch (error) {
+      console.error(`[ERROR] Settling game in room ${roomId}:`, error);
+      socket.emit('error', '结算时发生服务器错误');
+    }
+  });
+
+  // 监听踢人事件
+  socket.on('kickPlayer', async ({ roomId, targetUserId }: { roomId: string, targetUserId: string }) => {
+    try {
+      const room = await getRoom(roomId);
+      if (!room) {
+        return socket.emit('error', '房间不存在');
+      }
+
+      const requester = room.players.find(p => p.id === socket.id);
+      if (!requester || requester.userId !== room.hostUserId) {
+        return socket.emit('error', '只有房主才能踢人');
+      }
+
+      const result = await kickPlayerFromRoom(roomId, targetUserId);
+
+      if ('error' in result) {
+        return socket.emit('error', result.error);
+      }
+      
+      const { updatedRoom, kickedPlayer } = result;
+
+      // 向房间内剩余玩家广播更新
+      io.to(roomId).emit('roomStateUpdate', updatedRoom);
+      
+      // 找到被踢玩家的 socket 并通知他
+      const kickedSocket = io.sockets.sockets.get(kickedPlayer.id);
+      if (kickedSocket) {
+        kickedSocket.emit('kicked', '您已被房主移出房间');
+        kickedSocket.leave(roomId);
+      }
+      
+      console.log(`Host ${requester.name} kicked ${kickedPlayer.name} from room ${roomId}`);
+
+    } catch (error) {
+      console.error(`[ERROR] Kicking player from room ${roomId}:`, error);
+      socket.emit('error', '踢出玩家时发生服务器错误');
+    }
+  });
+
+  socket.on('leaveRoom', async ({ roomId }: { roomId: string }) => {
+    try {
+      const result = await leaveRoom(socket.id, roomId);
+      if (result) {
+        // 让该 socket 实例离开房间 channel
+        socket.leave(roomId);
+        socket.roomId = undefined; // 清除 socket 上的 roomId 记录
+        
+        // 检查房间是否还有玩家
+        if (result.updatedRoom.players.length > 0) {
+          io.to(roomId).emit('roomStateUpdate', result.updatedRoom);
+          console.log(`📢 Player left room ${roomId}, state updated.`);
+        } else {
+          // 如果房间空了，roomManager 会删除它
+          console.log(`📢 Room ${roomId} is now empty and deleted after player left.`);
+        }
+      }
+    } catch (error) {
+      console.error(`[ERROR] Leaving room ${roomId}:`, error);
+      socket.emit('error', '离开房间时发生服务器错误');
+    }
+  });
+
+  // 监听获取游戏历史事件
+  socket.on('getGameArchives', async (callback) => {
+    try {
+      // 从 socket 实例中安全地获取 userId
+      if (!socket.userId) {
+        return callback({ error: '用户未认证，无法获取游戏历史' });
+      }
+      const archives = await getArchivesForUser(socket.userId);
+      console.log(`📚 Found ${archives.length} archives for user ${socket.userId}`);
+      // 使用 callback 返回数据
+      callback({ archives });
+    } catch (error) {
+      console.error(`[ERROR] Fetching game archives for user ${socket.userId}:`, error);
+      callback({ error: '获取历史记录时发生服务器错误' });
     }
   });
 });

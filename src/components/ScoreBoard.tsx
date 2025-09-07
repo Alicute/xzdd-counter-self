@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
-import type { Player } from '../types/mahjong';
+import type { GameState } from '../types/mahjong';
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 
 interface ScoreBoardProps {
-  players: Player[];
+  gameState: GameState;
 }
 
-export default function ScoreBoard({ players }: ScoreBoardProps) {
+export default function ScoreBoard({ gameState }: ScoreBoardProps) {
+  const { players, settlementResult } = gameState;
   const [isCollapsed, setIsCollapsed] = useState(() => {
     // 从localStorage读取折叠状态，默认展开
     const saved = localStorage.getItem('scoreboard-collapsed');
@@ -38,6 +39,7 @@ export default function ScoreBoard({ players }: ScoreBoardProps) {
       default: return 'from-purple-400 to-purple-600';
     }
   };
+
 
   return (
     <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20">
@@ -181,10 +183,24 @@ export default function ScoreBoard({ players }: ScoreBoardProps) {
               <div className="text-sm text-purple-600">最高分差</div>
             </div>
           </div>
+
+          {/* 结算结果显示 */}
+          {gameState.isGameFinished && settlementResult && (
+            <div className="mt-6 p-4 bg-gradient-to-r from-green-50 to-cyan-50 rounded-xl border border-green-200">
+              <h4 className="text-lg font-bold text-center mb-3 text-green-800">🎉 游戏结束 - 最终结算 🎉</h4>
+              {settlementResult.length > 0 ? (
+                <pre className="text-sm text-left bg-white p-4 rounded-lg overflow-x-auto shadow-inner">
+                  {settlementResult.join("\n")}
+                </pre>
+              ) : (
+                <p className="text-center text-gray-600 py-4">所有玩家分数均为0，无需结算。</p>
+              )}
             </div>
           )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
-  );
+  </div>
+);
 }

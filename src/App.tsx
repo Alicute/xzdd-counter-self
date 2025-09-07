@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import type { GameState, GameEvent } from './types/mahjong';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import type { GameState, GameEvent, GameSettings } from './types/mahjong';
 import { applyEventToPlayers, reverseApplyEventToPlayers, settleCurrentRound } from './utils/mahjongCalculator';
 import { loadGameState, saveGameState, saveGameStateSync, getDefaultGameState, clearGameState } from './utils/storage';
 import { socketService } from './services/socketService';
@@ -37,7 +37,8 @@ function App() {
     confirmText: '确认',
     onConfirm: () => {}
   });
-
+  const [showSettlementModal, setShowSettlementModal] = useState(false);
+ 
   // 模式管理
   const [gameMode, setGameMode] = useState<'local' | 'online' | null>(null); // 'local', 'online', or null initially
   
@@ -140,6 +141,19 @@ function App() {
       });
     }
     
+    socketService.onKicked((message) => {
+      showConfirmDialog({
+        title: '通知',
+        message,
+        type: 'info',
+        confirmText: '好的',
+        onConfirm: () => {
+          setRoom(null);
+          setGameMode('online'); // 保持在线模式，显示大厅
+        }
+      });
+    });
+
     // gameMode 改变时，确保 socket 连接状态正确
     if (gameMode !== 'online' && socketService.isConnected()) {
       // socketService.disconnect(); // 暂时不在这里断开，以保持会话
@@ -148,7 +162,23 @@ function App() {
     }
     
   }, [authStatus, gameMode, room]);
+ 
+  // 游戏结束时显示结算弹窗
+  const prevIsGameFinished = useRef(gameState?.isGameFinished);
+  useEffect(() => {
+    const settlementShownKey = `settlementShown_${room?.id}`;
+    const hasBeenShown = sessionStorage.getItem(settlementShownKey);
 
+    // 检查状态是否从 false 变为 true，并且本会话中尚未显示过
+    if (gameState?.isGameFinished && !prevIsGameFinished.current && !hasBeenShown) {
+      setShowSettlementModal(true);
+      if (room?.id) {
+        sessionStorage.setItem(settlementShownKey, 'true'); // 设置标记
+      }
+    }
+    // 更新 ref 以供下次比较
+    prevIsGameFinished.current = gameState?.isGameFinished;
+  }, [gameState?.isGameFinished, room?.id]);
  
   // 检查游戏是否已开始（有事件记录）
   const isGameStarted = useMemo(() => {
@@ -386,9 +416,9 @@ function App() {
           room={room}
           error={error}
           currentUser={currentUser!}
-          onCreateRoom={() => {
+          onCreateRoom={(settings: GameSettings) => {
             if (currentUser) {
-              socketService.createRoom({ userId: currentUser.id, username: currentUser.username });
+              socketService.createRoom({ userId: currentUser.id, username: currentUser.username }, settings);
             }
           }}
           onJoinRoom={(roomId) => {
@@ -437,12 +467,30 @@ function App() {
                   <h3 className="font-semibold mb-3 text-gray-800">已加入的玩家:</h3>
                   <ul className="space-y-2">
                     {room.players.map(p => (
-                      <li key={p.id} className={`flex items-center justify-between bg-white p-2 rounded-md shadow-sm transition-opacity ${!p.isConnected ? 'opacity-50' : ''}`}>
-                        <div>
-                            <span className="font-medium text-gray-700">{p.name}{p.id === currentUser?.id ? ' (你)' : ''}</span>
+                      <li key={p.userId} className={`flex items-center justify-between bg-white p-2 rounded-md shadow-sm transition-opacity ${!p.isConnected ? 'opacity-50' : ''}`}>
+                        <div className="flex items-center">
+                            <span className="font-medium text-gray-700">{p.name}{p.userId === currentUser?.id ? ' (你)' : ''}</span>
                             {!p.isConnected && <span className="text-xs text-red-500 ml-2">(已掉线)</span>}
                         </div>
-                        {p.userId === room.hostUserId && <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full ml-2 font-semibold">房主</span>}
+                        <div className="flex items-center">
+                          {p.userId === room.hostUserId && <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full font-semibold">房主</span>}
+                          {currentUser?.id === room.hostUserId && p.userId !== room.hostUserId && (
+                            <button
+                              onClick={() => {
+                                showConfirmDialog({
+                                  title: '踢出玩家',
+                                  message: `确定要将玩家 “${p.name}” 踢出房间吗？`,
+                                  type: 'danger',
+                                  confirmText: '确认踢出',
+                                  onConfirm: () => socketService.kickPlayer(room.id, p.userId),
+                                });
+                              }}
+                              className="ml-2 px-2 py-1 text-xs text-red-700 bg-red-100 rounded hover:bg-red-200 transition-colors"
+                            >
+                              踢人
+                            </button>
+                          )}
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -460,6 +508,26 @@ function App() {
                   ) : (
                     <p className="text-center text-gray-500 animate-pulse">等待房主开始游戏...</p>
                   )}
+                   {/* 新增：房主解散房间按钮 */}
+                   {currentUser?.id === room.hostUserId && (
+                     <button
+                       onClick={() => {
+                         showConfirmDialog({
+                           title: '解散房间确认',
+                           message: '您确定要解散房间吗？所有玩家将被移出。',
+                           type: 'danger',
+                           confirmText: '确认解散',
+                           onConfirm: () => {
+                             socketService.endGame(room.id);
+                             clearOnlineSession();
+                           }
+                         });
+                       }}
+                       className="w-full mt-2 px-4 py-2 bg-red-100 text-red-700 font-bold rounded-lg hover:bg-red-200 transition-all text-sm"
+                     >
+                       解散房间
+                     </button>
+                   )}
                 </div>
             </div>
           </div>
@@ -516,9 +584,10 @@ function App() {
                         type: 'warning',
                         confirmText: '确认离开',
                         onConfirm: () => {
-                          // 离开房间不应该断开socket或清除登录状态
-                          // 后端会处理玩家离开房间的逻辑
-                          // 这里只需要重置客户端的房间视图
+                          if (room?.id) {
+                            socketService.leaveRoom(room.id);
+                          }
+                          // 立即重置客户端状态以返回大厅
                           clearOnlineSession();
                         }
                       });
@@ -544,7 +613,7 @@ function App() {
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
           {/* 分数看板 - 放大显示 */}
           <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 hover:shadow-xl transition-shadow duration-300">
-            <ScoreBoard players={gameState.players || []} />
+            <ScoreBoard gameState={gameState} />
           </div>
 
           {/* 当前局计分板 */}
@@ -553,45 +622,19 @@ function App() {
             currentRound={gameState.currentRound || 1}
           />
 
-          {/* 下一局按钮 */}
-          <div className="flex justify-center">
-            {(gameMode === 'local' || (gameMode === 'online' && room?.hostUserId === currentUser?.id)) ? (
-              <button
-                onClick={() => {
-                  const buttonText = gameState.currentRound === 1 && !hasCurrentRoundActivity ? '开局' : '下一局';
-                  
-                  // 本地模式保留分数检查逻辑
-                  if (gameMode === 'local' && hasCurrentRoundActivity && currentRoundBalance !== 0) {
-                    showConfirmDialog({
-                      title: '⚠️ 分数不平衡警告',
-                      message: `当前局分数不平衡（总计${currentRoundBalance > 0 ? '+' : ''}${currentRoundBalance}分）！\n\n继续${buttonText}将把当前不平衡的分数累加到总分中。您确定吗？`,
-                      type: 'warning',
-                      confirmText: `确认${buttonText}`,
-                      onConfirm: handleNextRound
-                    });
-                  } else {
-                    // 在线模式下房主操作，或本地模式正常情况，直接调用
-                     handleNextRound();
-                  }
-                }}
-                disabled={!gameState || gameState.players.length < 2}
-                className="px-8 py-3 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl hover:from-emerald-600 hover:to-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 font-semibold shadow-lg shadow-emerald-500/25 transform hover:scale-105"
-              >
-                🎯 {!gameState || (gameState.currentRound === 1 && !hasCurrentRoundActivity) ? '开局' : '下一局'}
-                <span className="ml-2 text-sm opacity-90">第{(gameState?.currentRound || 1) + (hasCurrentRoundActivity ? 1 : 0)}局</span>
-              </button>
-            ) : (
-              <p className="text-center text-gray-500 animate-pulse h-[52px] flex items-center">等待房主操作进入下一局...</p>
-            )}
-          </div>
 
           {/* 事件添加 - 核心功能 */}
-          <EventAdder
-            players={gameState?.players || []}
-            settings={gameState?.settings || getDefaultGameState().settings}
-            onEventAdd={addEvent}
-            currentPlayerId={gameMode === 'online' ? currentUser?.id : null}
-          />
+          {/* 事件添加 - 仅在游戏未结束时显示 */}
+          {isGameStarted && !gameState.isGameFinished && (
+            <EventAdder
+              gameState={gameState}
+              onEventAdd={addEvent}
+              onNextRound={handleNextRound}
+              isHost={gameMode === 'local' || (gameMode === 'online' && room?.hostUserId === currentUser?.id)}
+              roomId={room?.id || null}
+              currentPlayerId={gameMode === 'online' ? currentUser?.id : null}
+            />
+          )}
 
           {/* 历史记录 - 可折叠 */}
           <EventHistory
@@ -757,8 +800,28 @@ function App() {
           confirmText={confirmDialog.confirmText}
         />
       </div>
+
+      {/* 新增: 游戏结束结算结果弹窗 */}
+      {showSettlementModal && gameState?.settlementResult && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity duration-300">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md mx-auto text-center transform transition-all">
+            <h3 className="text-2xl font-bold mb-4 text-gray-800">🎉 游戏结束 - 最终结算 🎉</h3>
+            <div className="bg-gray-100 rounded-lg p-4 my-4">
+              <pre className="text-left text-sm sm:text-base text-gray-700 whitespace-pre-wrap font-mono leading-relaxed">
+                {gameState.settlementResult.join("\n")}
+              </pre>
+            </div>
+            <button
+              onClick={() => setShowSettlementModal(false)}
+              className="w-full sm:w-auto px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/50"
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
+ 
 export default App;

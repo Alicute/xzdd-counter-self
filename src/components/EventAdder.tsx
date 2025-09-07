@@ -1,17 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { FanType, GangType } from '../types/mahjong';
-import type { Player, GameSettings, GameEvent } from '../types/mahjong';
+import type { GameState, GameEvent } from '../types/mahjong';
 import { createZiMoEvent, createDianPaoEvent, createGangEvent, FAN_SCORE_MAP, calculateScoreFromFan, calculateTotalFan } from '../utils/mahjongCalculator';
+import { socketService } from '../services/socketService';
 
 interface EventAdderProps {
-  players: Player[];
-  settings: GameSettings;
+  gameState: GameState;
   onEventAdd: (event: GameEvent) => void;
+  onNextRound: () => void;
+  isHost: boolean;
+  roomId: string | null;
   currentPlayerId?: string | null;
 }
 
-export default function EventAdder({ players, settings, onEventAdd, currentPlayerId }: EventAdderProps) {
+export default function EventAdder({ gameState, onEventAdd, onNextRound, isHost, roomId, currentPlayerId }: EventAdderProps) {
+  const { players, settings, isGameFinished, currentRoundEvents, currentRound } = gameState;
   const [eventType, setEventType] = useState<'dian_pao_hu' | 'hu_pai' | 'gang'>('hu_pai');
+  // winnerId is the primary actor for any event type (the one who hus or gangs)
   const [winnerId, setWinnerId] = useState('');
   const [loserIds, setLoserIds] = useState<string[]>([]);
   const [selectedFanTypes, setSelectedFanTypes] = useState<FanType[]>([]);
@@ -19,47 +24,60 @@ export default function EventAdder({ players, settings, onEventAdd, currentPlaye
   const [gangType, setGangType] = useState<GangType>(GangType.AN_GANG);
   const [gangTargetIds, setGangTargetIds] = useState<string[]>([]);
 
+  const isOnlineMode = !!currentPlayerId;
+
+  // Centralized form reset logic. This is the core fix.
+  const resetForm = useCallback(() => {
+    // In online mode, always reset the primary actor to the current user.
+    // In local mode, clear the selection to allow choosing any player.
+    setWinnerId(isOnlineMode ? currentPlayerId! : '');
+    
+    // Clear all other selections
+    setLoserIds([]);
+    setSelectedFanTypes([]);
+    setGangCount(0);
+    setGangTargetIds([]);
+    setGangType(GangType.AN_GANG); // Reset gang type to default
+  }, [isOnlineMode, currentPlayerId]);
+
+
   const handleAddEvent = () => {
     if (!winnerId) return;
 
     let event;
     if (eventType === 'hu_pai') {
-      // 自摸：需要选择在场玩家（输家）
       if (loserIds.length === 0) return;
-      const activePlayers = [winnerId, ...loserIds]; // 在场玩家包括胡牌者
+      const activePlayers = [winnerId, ...loserIds];
       event = createZiMoEvent(winnerId, activePlayers, selectedFanTypes, gangCount, settings);
     } else if (eventType === 'dian_pao_hu') {
-      // 点炮：只需要一个点炮者
       if (loserIds.length !== 1) return;
       event = createDianPaoEvent(winnerId, loserIds[0], selectedFanTypes, gangCount, settings);
-    } else {
-      // 杠牌
+    } else { // 'gang'
+      // The logic for who to select as target is complex in Bloodshed Mahjong,
+      // so we trust the user's multi-selection.
       if (gangTargetIds.length === 0) return;
       event = createGangEvent(winnerId, gangType, settings, gangTargetIds);
     }
 
     onEventAdd(event);
-
-    // 重置表单
-    if (isOnlineMode && (eventType === 'hu_pai' || eventType === 'dian_pao_hu')) {
-      setWinnerId(currentPlayerId!);
-    } else {
-      setWinnerId('');
-    }
-    setLoserIds([]);
-    setSelectedFanTypes([]);
-    setGangCount(0);
-    setGangTargetIds([]);
+    
+    // Use the new centralized reset function
+    resetForm();
   };
 
   const toggleLoser = (playerId: string) => {
-    if (loserIds.includes(playerId)) {
-      setLoserIds(loserIds.filter(id => id !== playerId));
+    if (eventType === 'dian_pao_hu') {
+      setLoserIds(prev => (prev.includes(playerId) ? [] : [playerId]));
     } else {
-      setLoserIds([...loserIds, playerId]);
+       if (loserIds.includes(playerId)) {
+        setLoserIds(loserIds.filter(id => id !== playerId));
+      } else {
+        setLoserIds([...loserIds, playerId]);
+      }
     }
   };
 
+  // Reverted to original multi-select logic as requested.
   const toggleGangTarget = (playerId: string) => {
     if (gangTargetIds.includes(playerId)) {
       setGangTargetIds(gangTargetIds.filter(id => id !== playerId));
@@ -69,7 +87,6 @@ export default function EventAdder({ players, settings, onEventAdd, currentPlaye
   };
 
   const toggleFanType = (fanType: FanType) => {
-    // 所有番型都是平等的，支持自由叠加
     if (selectedFanTypes.includes(fanType)) {
       setSelectedFanTypes(selectedFanTypes.filter(type => type !== fanType));
     } else {
@@ -77,17 +94,16 @@ export default function EventAdder({ players, settings, onEventAdd, currentPlaye
     }
   };
  
-  // 监听事件类型和当前玩家 ID 的变化
+  // Effect to automatically set the actor in online mode when component loads or mode changes.
   useEffect(() => {
-    // 联机模式下，如果是胡牌或点炮事件，默认自己是赢家
-    if (currentPlayerId && (eventType === 'hu_pai' || eventType === 'dian_pao_hu')) {
-      setWinnerId(currentPlayerId);
-    } else if (!currentPlayerId) {
-      // 本地模式或者 eventType 变为 gang 时，不清空，让用户自己选
+    if (isOnlineMode) {
+      setWinnerId(currentPlayerId!);
+    } else {
+      setWinnerId('');
     }
-  }, [eventType, currentPlayerId]);
+  }, [isOnlineMode, currentPlayerId]);
 
-  // 所有番型列表
+  // All fan types list
   const allFanTypes = [
     FanType.XIAO_HU,
     FanType.DA_DUI_ZI,
@@ -100,8 +116,7 @@ export default function EventAdder({ players, settings, onEventAdd, currentPlaye
     FanType.HAI_DI_LAO
   ];
  
-  const isOnlineMode = !!currentPlayerId;
-  const isHuEventOnline = isOnlineMode && (eventType === 'hu_pai' || eventType === 'dian_pao_hu');
+  const isActorSelectionDisabled = isOnlineMode;
 
   return (
     <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 hover:shadow-xl transition-shadow duration-300">
@@ -115,11 +130,8 @@ export default function EventAdder({ players, settings, onEventAdd, currentPlaye
       </div>
 
       <div className="p-4 sm:p-6">
-        {/* 顶部：基本信息 - 横向排列 */}
         <div className="space-y-4 sm:space-y-6 mb-6">
-          {/* 事件类型和玩家选择 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* 事件类型选择 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 事件类型
@@ -158,7 +170,6 @@ export default function EventAdder({ players, settings, onEventAdd, currentPlaye
               </div>
             </div>
 
-            {/* 获胜者选择 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 {eventType === 'gang' ? '杠牌玩家' : '胡牌玩家'}
@@ -167,12 +178,11 @@ export default function EventAdder({ players, settings, onEventAdd, currentPlaye
                 value={winnerId}
                 onChange={(e) => {
                   setWinnerId(e.target.value);
-                  // 切换胡牌/杠牌玩家时，清空输家/被杠玩家选择
                   setLoserIds([]);
                   setGangTargetIds([]);
                 }}
-                disabled={isHuEventOnline}
-                className={`w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 shadow-sm hover:border-gray-400 transition-colors appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22M6%208l4%204%204-4%22/%3E%3C/svg%3E')] bg-[length:1.5rem_1.5rem] bg-[right_0.5rem_center] bg-no-repeat ${isHuEventOnline ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                disabled={isActorSelectionDisabled}
+                className={`w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 shadow-sm hover:border-gray-400 transition-colors appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22M6%208l4%204%204-4%22/%3E%3C/svg%3E')] bg-[length:1.5rem_1.5rem] bg-[right_0.5rem_center] bg-no-repeat ${isActorSelectionDisabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
               >
                 <option value="">请选择玩家</option>
                 {players.map(player => (
@@ -182,10 +192,8 @@ export default function EventAdder({ players, settings, onEventAdd, currentPlaye
                 ))}
               </select>
             </div>
-
           </div>
 
-          {/* 失败者选择（胡牌事件）*/}
           {(eventType === 'hu_pai' || eventType === 'dian_pao_hu') && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-3">
@@ -199,7 +207,7 @@ export default function EventAdder({ players, settings, onEventAdd, currentPlaye
                   <label key={player.id} className={`flex items-center p-3 rounded-lg border cursor-pointer transition-colors ${
                     loserIds.includes(player.id)
                       ? 'bg-red-50 border-red-200'
-                      : (player.id === winnerId && eventType !== 'hu_pai') || (isOnlineMode && player.id === currentPlayerId && eventType === 'hu_pai')
+                      : (player.id === winnerId)
                         ? 'bg-gray-100 border-gray-200 cursor-not-allowed'
                         : !winnerId
                           ? 'bg-gray-50 border-gray-300 cursor-not-allowed'
@@ -213,7 +221,7 @@ export default function EventAdder({ players, settings, onEventAdd, currentPlaye
                       className="rounded border-gray-300 text-red-600 focus:ring-red-500"
                     />
                     <span className={`ml-2 text-sm ${
-                      (player.id === winnerId) || !winnerId
+                       (player.id === winnerId) || !winnerId
                        ? 'text-gray-400' : 'text-gray-900'
                     }`}>{player.name}</span>
                   </label>
@@ -222,7 +230,6 @@ export default function EventAdder({ players, settings, onEventAdd, currentPlaye
             </div>
           )}
 
-          {/* 杠牌目标选择（仅杠牌事件）*/}
           {eventType === 'gang' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -275,10 +282,8 @@ export default function EventAdder({ players, settings, onEventAdd, currentPlaye
           )}
         </div>
 
-        {/* 中部：番型配置（仅胡牌事件）*/}
         {(eventType === 'hu_pai' || eventType === 'dian_pao_hu') && (
           <div className="space-y-4 mb-6">
-            {/* 番型选择 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-3">
                 选择番型（可多选叠加）
@@ -304,7 +309,6 @@ export default function EventAdder({ players, settings, onEventAdd, currentPlaye
               </div>
             </div>
 
-            {/* 杠牌加番 */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -336,7 +340,6 @@ export default function EventAdder({ players, settings, onEventAdd, currentPlaye
                 </div>
               </div>
               
-              {/* 番数预览 */}
               <div className="flex items-end">
                 <div className="bg-gray-50 rounded-lg p-4 w-full">
                   <div className="text-sm text-gray-600 mb-2">总番数预览</div>
@@ -347,7 +350,6 @@ export default function EventAdder({ players, settings, onEventAdd, currentPlaye
                     }
                   </div>
                   
-                  {/* 详细计算说明 */}
                   <div className="text-xs text-gray-600 space-y-1">
                     {selectedFanTypes.length > 0 && (
                       <div>
@@ -409,39 +411,55 @@ export default function EventAdder({ players, settings, onEventAdd, currentPlaye
           </div>
         )}
 
-        {/* 底部：操作按钮 */}
-        <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-100">
-          <button
-            onClick={handleAddEvent}
-            disabled={
-              !winnerId || 
-              (eventType === 'hu_pai' && loserIds.length === 0) ||
-              (eventType === 'dian_pao_hu' && loserIds.length !== 1) ||
-              (eventType === 'gang' && gangTargetIds.length === 0)
-            }
-            className={`flex-1 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-              (!winnerId || 
-               (eventType === 'hu_pai' && loserIds.length === 0) ||
-               (eventType === 'dian_pao_hu' && loserIds.length !== 1) ||
-               (eventType === 'gang' && gangTargetIds.length === 0))
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 hover:shadow-md transform hover:translate-y-[-1px] shadow-lg shadow-blue-500/15'
-            }`}
-          >
-            ✅ 添加事件
-          </button>
-          <button
-            onClick={() => {
-              setWinnerId('');
-              setLoserIds([]);
-              setSelectedFanTypes([]);
-              setGangCount(0);
-              setGangTargetIds([]);
-            }}
-            className="px-6 py-3 bg-gray-500 text-white font-medium rounded-lg hover:bg-gray-600 transition-colors"
-          >
-            🔄 重置
-          </button>
+        <div className="pt-4 border-t border-gray-100">
+          {isGameFinished ? (
+            <div className="text-center p-4 bg-green-50 text-green-700 rounded-lg">
+              <p className="font-semibold">🏁 游戏已结束并结算 🏁</p>
+              <p className="text-sm mt-1">请在顶部的排行榜查看最终结算详情。</p>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={handleAddEvent}
+                disabled={
+                  !winnerId ||
+                  (eventType === 'hu_pai' && loserIds.length === 0) ||
+                  (eventType === 'dian_pao_hu' && loserIds.length !== 1) ||
+                  (eventType === 'gang' && gangTargetIds.length === 0)
+                }
+                className={`flex-1 px-6 py-3 rounded-xl font-bold transition-all duration-200 shadow-lg ${
+                  (!winnerId ||
+                   (eventType === 'hu_pai' && loserIds.length === 0) ||
+                   (eventType === 'dian_pao_hu' && loserIds.length !== 1) ||
+                   (eventType === 'gang' && gangTargetIds.length === 0))
+                    ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:from-blue-600 hover:to-indigo-700 transform hover:scale-105 shadow-blue-500/25'
+                }`}
+              >
+                ✅ 添加事件
+              </button>
+
+              {isHost && (
+                <>
+                  <button
+                    onClick={onNextRound}
+                    disabled={players.length < 2}
+                    className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl hover:from-emerald-600 hover:to-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 font-bold shadow-lg shadow-emerald-500/25 transform hover:scale-105"
+                  >
+                    🎯 {currentRound === 1 && currentRoundEvents.length === 0 ? '开局' : '下一局'}
+                  </button>
+
+                  <button
+                    onClick={() => { if (roomId) socketService.settleGame(roomId); }}
+                    disabled={players.length < 2}
+                    className="flex-1 px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl hover:from-cyan-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 font-bold shadow-lg shadow-cyan-500/25 transform hover:scale-105"
+                  >
+                    💰 结束并结算
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

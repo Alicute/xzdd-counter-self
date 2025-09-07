@@ -1,5 +1,7 @@
 import { io, Socket } from 'socket.io-client';
 import type { Room } from '../types/room';
+import type { GameArchive } from '../types/archive';
+import type { GameSettings } from '../types/mahjong';
 import type { User } from '../types/user';
 import type { LobbyRoomInfo } from '../types/lobby';
 
@@ -76,12 +78,18 @@ export const socketService = {
     socket.on('roomEnded', callback);
   },
 
+  // 监听被踢出房间事件
+  onKicked: (callback: (message: string) => void) => {
+    socket.on('kicked', callback);
+  },
+
   // 移除监听器，防止内存泄漏
   cleanupListeners: () => {
     socket.off('roomStateUpdate');
     socket.off('error');
     socket.off('connect');
     socket.off('roomEnded');
+    socket.off('kicked');
     // lobbyUpdate is handled separately
   },
 
@@ -117,8 +125,8 @@ export const socketService = {
   },
 
   // 发送创建房间的请求
-  createRoom: (user: { userId: string; username: string }) => {
-    socket.emit('createRoom', { userId: user.userId, username: user.username });
+  createRoom: (user: { userId: string; username: string }, settings: GameSettings) => {
+    socket.emit('createRoom', { userId: user.userId, username: user.username, settings });
   },
 
   // 发送加入房间的请求
@@ -147,6 +155,16 @@ export const socketService = {
     socket.emit('endGame', { roomId });
   },
 
+  // 发送结算游戏的请求
+  settleGame: (roomId: string) => {
+    socket.emit('settleGame', { roomId });
+  },
+
+  // 发送踢人请求
+  kickPlayer: (roomId: string, targetUserId: string) => {
+    socket.emit('kickPlayer', { roomId, targetUserId });
+  },
+
   // 进入大厅
   enterLobby: () => {
     socket.emit('enterLobby');
@@ -155,5 +173,19 @@ export const socketService = {
   // 离开大厅
   leaveLobby: () => {
     socket.emit('leaveLobby');
+  },
+
+  // 发送离开房间的请求
+  leaveRoom: (roomId: string) => {
+    socket.emit('leaveRoom', { roomId });
+  },
+
+  // 获取游戏历史记录
+  getGameArchives: (): Promise<{ archives?: GameArchive[]; error?: string }> => {
+    return new Promise((resolve) => {
+      socket.emit('getGameArchives', (response: { archives?: GameArchive[]; error?: string }) => {
+        resolve(response);
+      });
+    });
   },
 };

@@ -125,6 +125,9 @@ pnpm dev
 
 ---
 
+## 源项目地址
+https://github.com/2ue/xzdd-counter.git
+
 ## 许可证
 
 MIT License

@@ -3,12 +3,15 @@ import { socketService } from '../services/socketService';
 import type { Room } from '../types/room';
 import type { User } from '../types/user';
 import type { LobbyRoomInfo } from '../types/lobby';
+import type { GameSettings } from '../types/mahjong';
+import SettingsManager from './SettingsManager'; // 引入 SettingsManager 以复用UI
+import GameHistoryPanel from './GameHistoryPanel'; // 引入牌局历史组件
 
 interface RoomManagerProps {
   room: Room | null;
   error: string | null;
   currentUser: User;
-  onCreateRoom: () => void;
+  onCreateRoom: (settings: GameSettings) => void; // 更新类型
   onJoinRoom: (roomId: string) => void;
   onLogout: () => void;
 }
@@ -16,30 +19,33 @@ interface RoomManagerProps {
 export default function RoomManager({ room, error, currentUser, onCreateRoom, onJoinRoom, onLogout }: RoomManagerProps) {
   const [roomId, setRoomId] = useState('');
   const [lobbyInfo, setLobbyInfo] = useState<LobbyRoomInfo[]>([]);
+  
+  // 为房间设置添加状态
+  const [gameSettings, setGameSettings] = useState<GameSettings>({
+    maxFan: 4,
+    callTransfer: true,
+    pricePerFan: 1, // 默认1分/元
+  });
 
   useEffect(() => {
-    // 当我们不在房间里时，我们就在大厅里
     if (!room) {
       console.log('🏛️ Entering lobby...');
       socketService.enterLobby();
       socketService.onLobbyUpdate(setLobbyInfo);
 
-      // 组件卸载或进入房间时离开大厅
       return () => {
         console.log('🚪 Leaving lobby...');
         socketService.leaveLobby();
-        // 只清理大厅的监听器，避免移除App.tsx中注册的全局监听器
         socketService.cleanupLobbyListeners();
       };
     }
-  }, [room]); // 依赖 room 状态
+  }, [room]);
 
-  // RoomManager 现在只负责显示创建/加入界面，房间内的视图已移至 App.tsx
   return (
     <div className="w-full h-screen bg-gray-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* 左侧：创建/加入 */}
-        <div className="bg-white rounded-lg shadow-md p-8">
+        <div className="bg-white rounded-lg shadow-md p-8 lg:col-span-1">
           <h2 className="text-2xl font-bold text-center mb-6">加入联机对战</h2>
           <div className="flex items-center justify-between mb-6">
             <p className="text-gray-600">欢迎你, <span className="font-bold">{currentUser.username}</span>!</p>
@@ -51,10 +57,16 @@ export default function RoomManager({ room, error, currentUser, onCreateRoom, on
             </button>
           </div>
 
+          {/* 新增：房间设置 */}
+          <div className="border-t border-b py-6 my-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">创建房间设置</h3>
+            <SettingsManager settings={gameSettings} onSettingsChange={setGameSettings} />
+          </div>
+
           <div className="space-y-4">
             <button
-              onClick={onCreateRoom}
-              className="w-full px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+              onClick={() => onCreateRoom(gameSettings)} // 传递设置
+              className="w-full px-4 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition-all shadow-lg shadow-green-500/50"
             >
               创建新房间
             </button>
@@ -80,10 +92,10 @@ export default function RoomManager({ room, error, currentUser, onCreateRoom, on
           {error && <p className="text-red-500 text-sm mt-4 text-center">{error}</p>}
         </div>
 
-        {/* 右侧：活跃房间列表 */}
-        <div className="bg-white rounded-lg shadow-md p-8">
+        {/* 中间：活跃房间列表 */}
+        <div className="bg-white rounded-lg shadow-md p-8 lg:col-span-1">
           <h2 className="text-2xl font-bold text-center mb-6">活跃房间</h2>
-          <div className="h-64 overflow-y-auto pr-2">
+          <div className="h-96 overflow-y-auto pr-2">
             {lobbyInfo.length > 0 ? (
               <ul className="space-y-3">
                 {lobbyInfo.map((room) => (
@@ -109,6 +121,11 @@ export default function RoomManager({ room, error, currentUser, onCreateRoom, on
               </div>
             )}
           </div>
+        </div>
+
+        {/* 右侧：牌局历史 */}
+        <div className="bg-gray-900 text-white rounded-lg shadow-md p-6 lg:col-span-1">
+            <GameHistoryPanel />
         </div>
       </div>
     </div>

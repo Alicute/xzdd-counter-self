@@ -1,5 +1,6 @@
 import sqlite3 from 'sqlite3';
 import { GameState } from '../types/mahjong';
+import type { GameArchive } from '../types/archive';
 
 // 类型定义
 export interface User {
@@ -57,6 +58,24 @@ export function initDb(): void {
       }
     });
   });
+
+    const createArchivesTableSql = `
+      CREATE TABLE IF NOT EXISTS game_archives (
+        id TEXT PRIMARY KEY,
+        endedAt INTEGER NOT NULL,
+        hostUserId TEXT NOT NULL,
+        players TEXT NOT NULL,
+        gameHistory TEXT NOT NULL,
+        settings TEXT NOT NULL
+      );
+    `;
+    db.run(createArchivesTableSql, (err) => {
+      if (err) {
+        console.error('❌ Error creating game_archives table:', err.message);
+      } else {
+        console.log('📜 `game_archives` table is ready.');
+      }
+    });
 }
 
 /**
@@ -213,6 +232,83 @@ export function updateUserRoom(userId: string, roomId: string | null): Promise<v
       if (err) {
         reject(err);
       } else {
+        resolve();
+      }
+    });
+  });
+}
+
+/**
+ * 获取一个用户的所有游戏归档
+ * @param userId 用户ID
+ */
+export function getArchivesForUser(userId: string): Promise<GameArchive[]> {
+  return new Promise((resolve, reject) => {
+    const sql = `SELECT * FROM game_archives ORDER BY endedAt DESC`;
+    db.all(sql, [], (err, rows: any[]) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      if (rows) {
+        const userArchives = rows
+          .map(row => {
+            try {
+              const players = JSON.parse(row.players);
+              // 先做第一层过滤，确保 players 字段有效且包含用户
+              if (Array.isArray(players) && players.some((p: any) => p.userId === userId)) {
+                 return { ...row, players };
+              }
+              return null;
+            } catch (e) {
+              console.error(`Could not parse players JSON for archive ${row.id}:`, row.players);
+              return null;
+            }
+          })
+          .filter(Boolean) // 过滤掉解析失败或不包含该用户的记录
+          .map(archive => {
+            try {
+               return {
+                ...archive,
+                gameHistory: JSON.parse(archive.gameHistory),
+                settings: JSON.parse(archive.settings),
+              }
+            } catch(e) {
+              console.error(`Could not parse history/settings JSON for archive ${archive.id}`);
+              return null;
+            }
+          })
+          .filter(Boolean); // 再次过滤掉解析失败的记录
+
+        resolve(userArchives as GameArchive[]);
+      } else {
+        resolve([]);
+      }
+    });
+  });
+}
+
+/**
+ * 保存一个游戏归档
+ * @param archive 游戏归档对象
+ */
+export function saveGameArchive(archive: GameArchive): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const sql = `
+      INSERT INTO game_archives (id, endedAt, hostUserId, players, gameHistory, settings)
+      VALUES (?, ?, ?, ?, ?, ?);
+    `;
+    
+    const playersJson = JSON.stringify(archive.players);
+    const gameHistoryJson = JSON.stringify(archive.gameHistory);
+    const settingsJson = JSON.stringify(archive.settings);
+
+    db.run(sql, [archive.id, archive.endedAt, archive.hostUserId, playersJson, gameHistoryJson, settingsJson], (err) => {
+      if (err) {
+        console.error('❌ Error saving game archive:', err.message);
+        reject(err);
+      } else {
+        console.log(`📦 Game archive ${archive.id} saved.`);
         resolve();
       }
     });
