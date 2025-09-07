@@ -9,7 +9,8 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 # **优化**: 切换到国内镜像源以加速依赖下载
 RUN npm config set registry https://registry.npmmirror.com/
-RUN npm install
+# **优化**: 增加 --verbose 参数以在构建时显示详细日志
+RUN npm install --verbose
 # 复制所有前端文件并构建
 COPY . .
 RUN npm run build
@@ -21,7 +22,8 @@ WORKDIR /app/server
 COPY server/package.json server/package-lock.json* ./
 # **优化**: 同样为后端切换镜像源
 RUN npm config set registry https://registry.npmmirror.com/
-RUN npm install
+# **优化**: 增加 --verbose 参数以在构建时显示详细日志
+RUN npm install --verbose
 # 复制所有后端文件并编译
 COPY server/. .
 RUN npm run build
@@ -40,7 +42,7 @@ WORKDIR /app
 COPY --from=builder /app/server/package.json /app/server/package-lock.json* ./server/
 # 只安装后端的生产依赖，减小镜像体积
 # **优化**: 在生产安装阶段同样使用国内镜像源
-RUN cd server && npm config set registry https://registry.npmmirror.com/ && npm install --omit=dev
+RUN cd server && npm config set registry https://registry.npmmirror.com/ && npm install --omit=dev --verbose
 
 # 从 builder 阶段复制构建好的前端和后端产物
 COPY --from=builder /app/dist ./dist
