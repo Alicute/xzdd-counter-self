@@ -30,3 +30,4 @@ dist-ssr
 ~i_*
 ig_*
 zzzig_*
+*.db
