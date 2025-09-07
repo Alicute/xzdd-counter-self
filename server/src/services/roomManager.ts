@@ -5,6 +5,10 @@ import { getDefaultGameState } from '../utils/gameState';
 import { getRoomFromDb, saveRoomToDb, deleteRoomFromDb, updateUserRoom, getAllRooms, saveGameArchive } from './db';
 import type { GameArchive } from '../types/archive';
 import { settleCurrentRound } from '../utils/mahjongCalculator';
+import { Server } from 'socket.io';
+
+// **锁机制**: 创建一个 Set 来存储正在被删除的房间ID，防止竞态条件
+const roomsBeingDeleted = new Set<string>();
 
 // 玩家在大厅中等待时的信息
 import { Player } from '../types/mahjong';
@@ -101,6 +105,10 @@ export async function getRoom(id: string): Promise<Room | null> {
  * @returns {Promise<Room | null>} 更新后的房间信息，如果房间不存在则返回 null
  */
 export async function joinRoom(id: string, player: Omit<LobbyPlayer, 'isConnected'>): Promise<{ room: Room | null; error?: string }> {
+  // **锁检查**
+  if (roomsBeingDeleted.has(id)) {
+    return { room: null, error: '房间正在解散中，无法加入' };
+  }
   const room = await getRoom(id);
   if (!room) {
     return { room: null, error: '房间不存在' };
@@ -148,6 +156,12 @@ export async function joinRoom(id: string, player: Omit<LobbyPlayer, 'isConnecte
  * @returns {Promise<{ updatedRoom: Room } | null>} 更新后的房间信息或null
  */
 export async function leaveRoom(playerId: string, id: string): Promise<{ updatedRoom: Room } | null> {
+    // **锁检查**
+    if (roomsBeingDeleted.has(id)) {
+      // 如果房间正在被删除，离开操作可以被视为成功，但不需要进行任何修改
+      const room = await getRoom(id);
+      return room ? { updatedRoom: room } : null;
+    }
     const room = await getRoom(id);
     if (!room) return null;
 
@@ -197,7 +211,11 @@ export async function leaveRoom(playerId: string, id: string): Promise<{ updated
  * @param roomId 房间 ID
  * @returns {Promise<Room | null>} 更新后的房间信息或 null
  */
-export async function handlePlayerDisconnect(socketId: string, id: string): Promise<{ updatedRoom: Room | null, wasHost: boolean }> {
+export async function handlePlayerDisconnect(socketId: string, id: string, io: Server): Promise<{ updatedRoom: Room | null, wasHost: boolean }> {
+  // **锁检查**
+  if (roomsBeingDeleted.has(id)) {
+    return { updatedRoom: null, wasHost: false }; // 房间正在删除，忽略此断连事件
+  }
   const room = await getRoom(id);
   if (!room) return { updatedRoom: null, wasHost: false };
 
@@ -220,7 +238,7 @@ export async function handlePlayerDisconnect(socketId: string, id: string): Prom
   // 2. 检查是否所有人都离线了
   if (updatedPlayers.every(p => !p.isConnected)) {
     console.log(`💨 All players in room ${id} are disconnected. Deleting room.`);
-    await endGameAndDeleteRoom(id);
+    await endGameAndDeleteRoom(id, io);
     // 返回 null 表示房间已被删除
     return { updatedRoom: null, wasHost: false };
   }
@@ -250,6 +268,10 @@ export async function handlePlayerDisconnect(socketId: string, id: string): Prom
  * @returns {Promise<Room | null>} 更新后的房间信息
  */
 export async function updateGameState(id: string, newGameState: GameState): Promise<Room | null> {
+  // **锁检查**
+  if (roomsBeingDeleted.has(id)) {
+    return null;
+  }
   const room = await getRoom(id);
   if (room) {
     const updatedRoom: Room = { ...room, gameState: newGameState };
@@ -356,23 +378,63 @@ export async function kickPlayerFromRoom(id: string, targetUserId: string): Prom
  * @param roomId 房间ID
  * @returns {Promise<void>}
  */
-export async function endGameAndDeleteRoom(id: string): Promise<void> {
-  // 1. 先获取房间信息，为后续清理玩家状态做准备
-  const room = await getRoom(id);
-
-  // 2. 调用 settleGame 来处理结算和存档，忽略返回值
-  // 即使房间不存在或已结算，settleGame 也能安全处理
-  await settleGame(id);
-
-  // 3. 清理所有玩家的 currentRoomId
-  if (room && room.players) {
-      const userIds = room.players.map(p => p.userId).filter(Boolean) as string[];
-      await Promise.all(userIds.map(uid => updateUserRoom(uid, null)));
+export async function endGameAndDeleteRoom(id: string, io: Server): Promise<void> {
+  // **加锁**：防止并发调用和在删除过程中被其他函数修改
+  if (roomsBeingDeleted.has(id)) {
+    console.log(`[endGame] Deletion for room ${id} is already in progress. Skipping.`);
+    return;
   }
+  roomsBeingDeleted.add(id);
 
-  // 4. 从数据库中删除房间
-  await deleteRoomFromDb(id);
-  console.log(`💥 Room ${id} ended, settled, archived, and deleted.`);
+  try {
+    // 1. 获取房间信息。
+    const room = await getRoom(id);
+    if (!room) {
+      console.log(`[endGame] Room ${id} not found or already deleted. Skipping.`);
+      return; // 直接返回，因为 finally 会解锁
+    }
+
+    // 2. **立即**向房间内的所有客户端广播房间结束的消息。
+    io.to(id).emit('roomEnded', '房主已解散房间。');
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // 3. 调用 settleGame 来处理完整的结算和存档逻辑。
+    await settleGame(id);
+
+    // 4. 清理所有玩家在数据库中的 currentRoomId 状态。
+    if (room.players && room.players.length > 0) {
+      const userIds = room.players.map(p => p.userId).filter((uid): uid is string => !!uid);
+      console.log(`[endGame] Clearing currentRoomId for users in room ${id}:`, userIds);
+      await Promise.all(userIds.map(uid => updateUserRoom(uid, null)));
+    }
+
+    // 5. **关键修复**: 在从数据库删除房间之前，先清理所有连接到该房间的 socket 实例上的残留状态。
+    // 这可以防止一个刚刚结束的房间的 socket 在断开连接时，因残留的 `socket.roomId` 而触发多余的、错误的 `handlePlayerDisconnect`。
+    const socketIds = io.sockets.adapter.rooms.get(id);
+    if (socketIds) {
+      console.log(`[endGame] Found ${socketIds.size} sockets in room ${id}. Clearing their roomId property.`);
+      for (const socketId of socketIds) {
+        const socket = io.sockets.sockets.get(socketId);
+        if (socket) {
+          // 将自定义的 roomId 属性清除，切断与旧房间的关联
+          (socket as any).roomId = undefined;
+        }
+      }
+    }
+
+    // 6. 从数据库中删除该房间的记录。
+    await deleteRoomFromDb(id);
+
+    // 7. 强制所有 socket 离开 channel，作为最后的网络层面清理。
+    io.in(id).socketsLeave(id);
+    
+    console.log(`💥 Room ${id} process finished: notified, settled, archived, and deleted.`);
+  } catch (error) {
+    console.error(`[CRITICAL] Error during endGameAndDeleteRoom for ${id}:`, error);
+  } finally {
+    // **解锁**
+    roomsBeingDeleted.delete(id);
+  }
 }
 
 /**
@@ -450,6 +512,13 @@ function calculateServerSettlement(players: Player[], pricePerFan: number): stri
 export async function settleGame(id: string): Promise<Room | null> {
   const room = await getRoom(id);
   if (!room) return null;
+
+  // **关键修复**：增加幂等性检查。如果游戏已经结束，则不再执行任何操作。
+  // 这可以防止因为重复调用 settleGame 而导致重复存档，从而引发 UNIQUE constraint 错误。
+  if (room.gameState.isGameFinished) {
+    console.log(`[settleGame] Game in room ${id} is already finished. Skipping settlement.`);
+    return room;
+  }
 
   // 1. 结算当前局分数，将其加到总分上
   const settledPlayers = settleCurrentRound(room.gameState.players);

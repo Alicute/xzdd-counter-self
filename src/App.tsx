@@ -525,7 +525,8 @@ function App() {
                            confirmText: '确认解散',
                            onConfirm: () => {
                              socketService.endGame(room.id);
-                             clearOnlineSession();
+                             // **关键修复**: 不再立即清理会话。
+                             // 等待服务器广播 roomEnded 事件来统一处理所有客户端的退出逻辑。
                            }
                          });
                        }}
@@ -571,8 +572,8 @@ function App() {
                         onConfirm: () => {
                           if (room.id) {
                             socketService.endGame(room.id);
-                            // 立即重置客户端状态以返回大厅
-                            clearOnlineSession();
+                            // **关键修复**: 不再立即清理会话。
+                            // 房主的操作应该和其他玩家一样，等待服务器的 roomEnded 广播。
                           }
                         }
                       });
@@ -594,7 +595,7 @@ function App() {
                             socketService.leaveRoom(room.id);
                           }
                           // 立即重置客户端状态以返回大厅
-                          clearOnlineSession();
+                          clearOnlineSession(); // 普通玩家离开，可以立即清理
                         }
                       });
                     }}
