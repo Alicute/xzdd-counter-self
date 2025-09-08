@@ -57,4 +57,4 @@ COPY --from=builder /app/server/dist ./server/dist
 EXPOSE 3001
 
 # 定义容器启动时运行的命令
-CMD ["node", "server/dist/src/index.js"]
+CMD ["node", "server/dist/index.js"]
