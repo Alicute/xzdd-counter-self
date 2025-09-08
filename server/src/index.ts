@@ -40,7 +40,7 @@ if (process.env.NODE_ENV === 'production') {
   // "CATCHALL" HANDLER:
   // 对于所有未匹配到API路由的GET请求，都返回前端的 index.html 文件。
   // 这使得 React Router 可以在客户端接管路由。
-  app.get('*', (req, res) => {
+  app.get('/*', (req, res) => {
     res.sendFile(path.join(clientBuildPath, 'index.html'));
   });
 }
