@@ -13,6 +13,7 @@ export function getDefaultGameState(): GameState {
     settings: {
       maxFan: 4, // 默认4番封顶
       callTransfer: true, // 默认开启呼叫转移
+      pricePerFan: 1, // 默认每番1元
     },
   };
 }
