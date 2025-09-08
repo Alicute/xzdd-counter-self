@@ -113,6 +113,7 @@ export function getDefaultSettings(): GameSettings {
   return {
     maxFan: 4, // 默认4番封顶
     callTransfer: false, // 默认不呼叫转移
+    pricePerFan: 1, // 默认每番1元
   };
 }
 
