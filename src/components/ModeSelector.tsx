@@ -19,7 +19,7 @@ export default function ModeSelector({ onSelectMode }: ModeSelectorProps) {
         <div className="space-y-4">
           <button
             onClick={() => onSelectMode('local')}
-            className="w-full px-6 py-4 bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex items-center gap-4 text-left"
+            className="hidden w-full px-6 py-4 bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex items-center gap-4 text-left"
           >
             <div className="w-12 h-12 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-lg flex items-center justify-center flex-shrink-0">
               <ShieldCheckIcon className="w-7 h-7" />
