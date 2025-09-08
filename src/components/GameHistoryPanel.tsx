@@ -1,18 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { socketService } from '../services/socketService';
 import type { GameArchive } from '../types/archive';
-import GameArchiveDetail from './GameArchiveDetail'; // 导入新组件
- 
+import GameArchiveDetail from './GameArchiveDetail';
+import { useAuth } from '../hooks/useAuth'; // 导入 useAuth Hook
+
 const GameHistoryPanel: React.FC = () => {
+  const isAuthenticated = useAuth(); // 使用Hook获取认证状态
   const [archives, setArchives] = useState<GameArchive[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false); // 初始时不加载
   const [error, setError] = useState<string | null>(null);
   const [selectedArchive, setSelectedArchive] = useState<GameArchive | null>(null);
- 
+
   useEffect(() => {
     const fetchArchives = async () => {
       try {
         setIsLoading(true);
+        setError(null);
         const response = await socketService.getGameArchives();
         if (response.archives) {
           setArchives(response.archives);
@@ -27,8 +30,15 @@ const GameHistoryPanel: React.FC = () => {
       }
     };
 
-    fetchArchives();
-  }, []);
+    if (isAuthenticated) {
+      fetchArchives();
+    } else {
+      // 如果未认证，重置状态
+      setArchives([]);
+      setError('需要登录才能查看历史记录');
+      setIsLoading(false);
+    }
+  }, [isAuthenticated]); // 依赖于认证状态
 
   if (isLoading) {
     return <div className="p-4 bg-gray-800 rounded-lg shadow-inner text-center"><p>正在加载历史记录...</p></div>;

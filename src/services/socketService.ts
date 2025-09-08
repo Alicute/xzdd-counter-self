@@ -9,33 +9,51 @@ import type { LobbyRoomInfo } from '../types/lobby';
 // 所以这里不再需要硬编码的URL。Socket.IO客户端会自动连接到提供网页的同一个服务器。
 const SERVER_URL = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3001';
 
-// 使用 'as any' 是因为 socket.io-client 的类型有时与 NodeJS 的 EventEmitter 冲突
+// --- 认证状态管理器 ---
+type AuthListener = (isAuthenticated: boolean) => void;
+let isAuthenticated = false;
+const authListeners = new Set<AuthListener>();
+
+const authManager = {
+  getIsAuthenticated: () => isAuthenticated,
+  subscribe: (listener: AuthListener) => {
+    authListeners.add(listener);
+    return () => authListeners.delete(listener); // 返回取消订阅函数
+  },
+  setAuthenticated: (status: boolean) => {
+    if (isAuthenticated !== status) {
+      isAuthenticated = status;
+      authListeners.forEach(listener => listener(status));
+    }
+  }
+};
+// --------------------
+
 const socket: Socket = io(SERVER_URL, {
   autoConnect: false, // 手动连接
 } as any);
 
-// 用于调试，监听所有事件
 socket.onAny((event, ...args) => {
   console.log(`📡 a socket event was sent: ${event}`, args);
 });
 
-// 监听连接成功
 socket.on('connect', () => {
   console.log('✅ Connected to WebSocket server');
 });
 
-// 监听连接错误
 socket.on('connect_error', (err) => {
   console.error('❌ WebSocket connection error:', err.message);
 });
 
-// 监听断开连接
 socket.on('disconnect', (reason) => {
   console.log(`🔌 Disconnected from WebSocket server: ${reason}`);
+  authManager.setAuthenticated(false); // 断开连接时更新认证状态
 });
 
-// 导出服务函数
 export const socketService = {
+  // 暴露认证状态管理器
+  auth: authManager,
+
   connect: () => {
     if (!socket.connected) {
       socket.connect();
@@ -114,6 +132,7 @@ export const socketService = {
     return new Promise((resolve, reject) => {
       socket.emit('loginOrRegister', { username }, (response: { user?: User; error?: string }) => {
         if (response.user) {
+          // 登录成功不代表认证成功，认证是下一步
           resolve(response.user);
         } else {
           reject(new Error(response.error || 'Login failed'));
@@ -128,8 +147,10 @@ export const socketService = {
       // **架构重构**: 不再发送 roomId，服务器将从数据库中获取
       socket.emit('authenticate', { userId }, (response: { user?: User; room?: Room | null; error?: string }) => {
         if (response.user) {
+          authManager.setAuthenticated(true); // 认证成功！
           resolve({ user: response.user, room: response.room || null });
         } else {
+          authManager.setAuthenticated(false);
           reject(new Error(response.error || 'Authentication failed'));
         }
       });

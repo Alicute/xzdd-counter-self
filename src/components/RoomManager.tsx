@@ -43,10 +43,10 @@ export default function RoomManager({ room, error, currentUser, onCreateRoom, on
   }, [room]);
 
   return (
-    <div className="w-full h-screen bg-gray-100 flex items-center justify-center p-4">
+    <div className="w-full min-h-screen bg-gray-100 flex flex-col items-center justify-start p-4 sm:p-8">
       <div className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* 左侧：创建/加入 */}
-        <div className="bg-white rounded-lg shadow-md p-8 lg:col-span-1">
+        <div className="bg-white rounded-lg shadow-md p-6 sm:p-8 lg:col-span-1 w-full">
           <h2 className="text-2xl font-bold text-center mb-6">加入联机对战</h2>
           <div className="flex items-center justify-between mb-6">
             <p className="text-gray-600">欢迎你, <span className="font-bold">{currentUser.username}</span>!</p>
@@ -94,7 +94,7 @@ export default function RoomManager({ room, error, currentUser, onCreateRoom, on
         </div>
 
         {/* 中间：活跃房间列表 */}
-        <div className="bg-white rounded-lg shadow-md p-8 lg:col-span-1">
+        <div className="bg-white rounded-lg shadow-md p-6 sm:p-8 lg:col-span-1 w-full">
           <h2 className="text-2xl font-bold text-center mb-6">活跃房间</h2>
           <div className="h-96 overflow-y-auto pr-2">
             {lobbyInfo.length > 0 ? (
@@ -125,7 +125,7 @@ export default function RoomManager({ room, error, currentUser, onCreateRoom, on
         </div>
 
         {/* 右侧：牌局历史 */}
-        <div className="bg-gray-900 text-white rounded-lg shadow-md p-6 lg:col-span-1">
+        <div className="bg-gray-900 text-white rounded-lg shadow-md p-6 lg:col-span-1 w-full">
             <GameHistoryPanel key={historyRefreshCounter} />
         </div>
       </div>
