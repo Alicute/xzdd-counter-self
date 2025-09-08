@@ -22,9 +22,6 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3001;
 
-app.get('/', (req, res) => {
-  res.send('Mahjong Counter Server is running!');
-});
 
 // --- 生产环境配置 ---
 // 在生产环境中，Express需要托管前端Vite构建出的静态文件
